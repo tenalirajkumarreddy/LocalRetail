@@ -6,7 +6,7 @@ import {
   XCircle,
   AlertTriangle
 } from 'lucide-react';
-import { isUserAuthenticated, getBackupStatus } from '../utils/google-sheets';
+// import { isUserAuthenticated, getBackupStatus } from '../utils/google-sheets'; // DISABLED: Google integration disabled
 import { getStorageMode } from '../utils/supabase-storage';
 
 export const StatusIndicator: React.FC = () => {
@@ -23,11 +23,12 @@ export const StatusIndicator: React.FC = () => {
   }, []);
 
   const checkStatus = () => {
-    setGoogleAuth(isUserAuthenticated());
+    setGoogleAuth(false); // Google authentication disabled
     setDatabase(getStorageMode() === 'supabase' ? 'supabase' : 'localStorage');
   };
 
-  const googleConfig = getBackupStatus();
+  // const googleConfig = getBackupStatus(); // DISABLED: Google integration disabled
+  // Google configuration disabled
 
   return (
     <div className="relative">
@@ -117,17 +118,10 @@ export const StatusIndicator: React.FC = () => {
                   <span className="text-sm">API Config</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  {googleConfig.isConfigured ? (
-                    <>
-                      <CheckCircle className="w-4 h-4 text-green-600" />
-                      <span className="text-xs text-green-600">Ready</span>
-                    </>
-                  ) : (
-                    <>
-                      <XCircle className="w-4 h-4 text-red-600" />
-                      <span className="text-xs text-red-600">Not Set</span>
-                    </>
-                  )}
+                  <>
+                    <XCircle className="w-4 h-4 text-gray-400" />
+                    <span className="text-xs text-gray-400">Disabled</span>
+                  </>
                 </div>
               </div>
             </div>

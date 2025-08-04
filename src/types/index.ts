@@ -41,6 +41,9 @@ export interface Transaction {
   balanceChange: number;
   date: Date;
   invoiceNumber: string;
+  routeId?: string;
+  routeName?: string;
+  sheetId?: string;
 }
 
 export interface InvoiceItem {

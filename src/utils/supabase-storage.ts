@@ -1,5 +1,5 @@
 import { supabase, TABLES, isSupabaseConfigured } from '../lib/supabase';
-import { Customer, Transaction, Invoice, Product, CompanySettings, RouteInfo } from '../types';
+import { Customer, Transaction, Invoice, Product, CompanySettings, RouteInfo, InvoiceItem } from '../types';
 
 // Storage modes
 type StorageMode = 'localStorage' | 'supabase';
@@ -276,8 +276,9 @@ export const addCustomer = async (customer: Omit<Customer, 'id' | 'createdAt' | 
   
   if (mode === 'supabase') {
     try {
-      // Generate 6-digit ID
-      const customerId = Math.floor(100000 + Math.random() * 900000).toString();
+      // Generate sequential customer ID starting from 100001
+      const { generateCustomerId } = await import('./storage');
+      const customerId = generateCustomerId();
       
       const { data, error } = await supabase
         .from(TABLES.CUSTOMERS)
@@ -434,6 +435,28 @@ export const updateCustomer = async (id: string, updates: Partial<Customer>): Pr
   return localUpdateCustomer(id, updates);
 };
 
+export const deleteCustomer = async (id: string): Promise<void> => {
+  const mode = getStorageMode();
+  
+  if (mode === 'supabase') {
+    try {
+      const { error } = await supabase
+        .from(TABLES.CUSTOMERS)
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      return;
+    } catch (error) {
+      handleError(error, 'delete customer from Supabase');
+    }
+  }
+  
+  // Fallback to localStorage
+  const { deleteCustomer: localDeleteCustomer } = await import('./storage');
+  return localDeleteCustomer(id);
+};
+
 export const getCustomerById = async (id: string): Promise<Customer | undefined> => {
   const customers = await getCustomers();
   return customers.find(c => c.id === id);
@@ -444,8 +467,9 @@ export const addInvoice = async (invoice: Omit<Invoice, 'id' | 'invoiceNumber'>)
   
   if (mode === 'supabase') {
     try {
-      // Generate invoice number
-      const invoiceNumber = `INV-${Date.now()}`;
+      // Generate sequential invoice number starting from INV00001
+      const { generateInvoiceNumber } = await import('./storage');
+      const invoiceNumber = generateInvoiceNumber();
       
       const { data, error } = await supabase
         .from(TABLES.INVOICES)
@@ -577,11 +601,11 @@ export const getRouteInfos = async (): Promise<RouteInfo[]> => {
   })) : [];
 };
 
-export const saveRouteInfo = async (routeData: Omit<RouteInfo, 'id' | 'createdAt' | 'updatedAt'>): Promise<void> => {
+export const saveRouteInfo = async (routeData: Omit<RouteInfo, 'id' | 'createdAt' | 'updatedAt'>, customId?: string): Promise<void> => {
   const mode = getStorageMode();
   
   const routeInfo: RouteInfo = {
-    id: `R${Date.now()}`,
+    id: customId || `R${Date.now()}`,
     ...routeData,
     createdAt: new Date(),
     updatedAt: new Date()
@@ -676,4 +700,161 @@ export const deleteRouteInfo = async (routeId: string): Promise<void> => {
   const routeInfos = existingData ? JSON.parse(existingData) : [];
   const filteredRoutes = routeInfos.filter((route: RouteInfo) => route.id !== routeId);
   window.localStorage.setItem('sales_app_route_infos', JSON.stringify(filteredRoutes));
+};
+
+// Sheets History Management
+export interface SheetRecord {
+  id: string;
+  routeId: string;
+  routeName: string;
+  customers: Customer[];
+  createdAt: Date;
+  updatedAt: Date;
+  status: 'active' | 'closed';
+  deliveryData: {
+    [customerId: string]: {
+      [productId: string]: {
+        quantity: number;
+        amount: number;
+      };
+    };
+  };
+  amountReceived: {
+    [customerId: string]: number;
+  };
+  notes: string;
+}
+
+export const getSheetHistory = async (): Promise<SheetRecord[]> => {
+  const data = localStorage.getItem('sales_app_sheets_history');
+  return data ? JSON.parse(data).map((sheet: any) => ({
+    ...sheet,
+    createdAt: new Date(sheet.createdAt),
+    updatedAt: new Date(sheet.updatedAt)
+  })) : [];
+};
+
+export const saveSheetHistory = async (sheetRecord: Omit<SheetRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> => {
+  const sheets = await getSheetHistory();
+  const newSheet: SheetRecord = {
+    ...sheetRecord,
+    id: `SHEET-${Date.now()}`,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+  
+  sheets.push(newSheet);
+  localStorage.setItem('sales_app_sheets_history', JSON.stringify(sheets));
+  return newSheet.id;
+};
+
+export const updateSheetRecord = async (id: string, updates: Partial<SheetRecord>): Promise<void> => {
+  const sheets = await getSheetHistory();
+  const index = sheets.findIndex(sheet => sheet.id === id);
+  
+  if (index !== -1) {
+    sheets[index] = { ...sheets[index], ...updates, updatedAt: new Date() };
+    localStorage.setItem('sales_app_sheets_history', JSON.stringify(sheets));
+  }
+};
+
+export const deleteSheetRecord = async (id: string): Promise<void> => {
+  const sheets = await getSheetHistory();
+  const filteredSheets = sheets.filter(sheet => sheet.id !== id);
+  localStorage.setItem('sales_app_sheets_history', JSON.stringify(filteredSheets));
+};
+
+export const closeSheetRecord = async (id: string): Promise<void> => {
+  const sheets = await getSheetHistory();
+  const sheetIndex = sheets.findIndex(sheet => sheet.id === id);
+  
+  if (sheetIndex === -1) return;
+  
+  const sheet = sheets[sheetIndex];
+  const products = await getProducts();
+  
+  // Process each customer's transactions
+  for (const customer of sheet.customers) {
+    const customerDeliveryData = sheet.deliveryData[customer.id] || {};
+    const amountReceived = sheet.amountReceived?.[customer.id] || 0;
+    
+    // Calculate total purchase amount
+    const customerTotal = Object.values(customerDeliveryData)
+      .reduce((sum, item) => sum + item.amount, 0);
+    
+    // Create sale transaction if customer purchased products
+    if (customerTotal > 0) {
+      const saleItems: InvoiceItem[] = [];
+      
+      // Convert delivery data to invoice items
+      for (const [productId, data] of Object.entries(customerDeliveryData)) {
+        if (data.quantity > 0) {
+          const product = products.find(p => p.id === productId);
+          if (product) {
+            saleItems.push({
+              productName: product.name,
+              quantity: data.quantity,
+              price: data.amount / data.quantity, // Calculate unit price
+              total: data.amount
+            });
+          }
+        }
+      }
+      
+      // Add sale transaction
+      await addTransaction({
+        customerId: customer.id,
+        customerName: customer.name,
+        type: 'sale',
+        items: saleItems,
+        totalAmount: customerTotal,
+        amountReceived: 0, // Payment is separate transaction
+        balanceChange: customerTotal, // Increases outstanding
+        date: new Date(),
+        invoiceNumber: `SHEET-${sheet.id}-${customer.id}`,
+        routeId: sheet.routeId,
+        routeName: sheet.routeName,
+        sheetId: sheet.id
+      });
+    }
+    
+    // Create payment transaction if customer paid money
+    if (amountReceived > 0) {
+      await addTransaction({
+        customerId: customer.id,
+        customerName: customer.name,
+        type: 'payment',
+        items: [],
+        totalAmount: 0,
+        amountReceived: amountReceived,
+        balanceChange: -amountReceived, // Reduces outstanding
+        date: new Date(),
+        invoiceNumber: `PAY-${sheet.id}-${customer.id}`,
+        routeId: sheet.routeId,
+        routeName: sheet.routeName,
+        sheetId: sheet.id
+      });
+    }
+    
+    // Update customer's outstanding amount
+    const outstandingChange = customerTotal - amountReceived;
+    if (outstandingChange !== 0 || amountReceived > 0) {
+      const updatedCustomer = {
+        ...customer,
+        outstandingAmount: customer.outstandingAmount + outstandingChange
+      };
+      
+      // Update customer in the main storage
+      await updateCustomer(customer.id, { outstandingAmount: updatedCustomer.outstandingAmount });
+    }
+  }
+  
+  // Mark sheet as closed
+  sheets[sheetIndex] = {
+    ...sheet,
+    status: 'closed',
+    updatedAt: new Date()
+  };
+  
+  localStorage.setItem('sales_app_sheets_history', JSON.stringify(sheets));
 };

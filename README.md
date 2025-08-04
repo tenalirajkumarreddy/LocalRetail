@@ -7,11 +7,10 @@ A comprehensive sales management system designed for local retail businesses, di
 - **Customer Management**: Route-based customer organization with custom pricing
 - **Invoice Generation**: Multi-item invoices with automatic calculations
 - **Product Catalog**: Flexible product management with customer-specific pricing
-- **Route Sheets**: PDF generation for field agents with automatic Google Sheets backup
+- **Route Sheets**: PDF generation for field agents
 - **Route Management**: Organize delivery routes by areas and pincodes
 - **Transaction Tracking**: Complete sales, payment, and adjustment history
 - **Dashboard Analytics**: Business overview and key metrics
-- **Google Sheets Integration**: Automatic data backup and route sheet storage
 - **Responsive Design**: Works on desktop, tablet, and mobile devices with hamburger menu
 
 ## Tech Stack
@@ -22,7 +21,6 @@ A comprehensive sales management system designed for local retail businesses, di
 - **Icons**: Lucide React
 - **PDF Generation**: jsPDF + html2canvas
 - **Database**: Supabase (with localStorage fallback)
-- **Backup & Sync**: Google Sheets API
 - **Date Handling**: date-fns
 
 ## Getting Started
@@ -52,7 +50,6 @@ A comprehensive sales management system designed for local retail businesses, di
    
    Edit `.env` and add your credentials:
    - Supabase credentials (see [Supabase Setup Guide](SUPABASE_SETUP.md))
-   - Google Sheets API credentials (see [Google Sheets Integration Guide](GOOGLE_SHEETS_INTEGRATION.md))
 
 4. Start the development server:
    ```bash
@@ -69,13 +66,7 @@ A comprehensive sales management system designed for local retail businesses, di
 - Scalable and secure
 - See [Supabase Setup Guide](SUPABASE_SETUP.md) for detailed instructions
 
-### 2. Google Sheets Backup (Optional but Recommended)
-- Automatic daily data backup
-- Route sheets automatically saved to Google Drive
-- Manual backup triggers
-- See [Google Sheets Integration Guide](GOOGLE_SHEETS_INTEGRATION.md) for setup
-
-### 3. Local Storage (Development/Demo)
+### 2. Local Storage (Development/Demo)
 - Browser-based storage
 - No external dependencies
 - Automatically used as fallback

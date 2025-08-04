@@ -1,5 +1,6 @@
-import { backupAllDataToSheets, isUserAuthenticated } from './google-sheets';
+// import { backupAllDataToSheets, isUserAuthenticated } from './google-sheets';
 
+// GOOGLE BACKUP TEMPORARILY DISABLED
 // Backup service configuration
 const BACKUP_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 const BACKUP_STORAGE_KEY = 'sales_app_last_backup';
@@ -18,8 +19,11 @@ export class AutoBackupService {
     return AutoBackupService.instance;
   }
 
-  // Start automatic backup service
+  // Start automatic backup service - DISABLED
   public start(): void {
+    console.log('AutoBackupService: Google backup temporarily disabled');
+    return; // Early return to disable the service
+    
     if (this.isRunning) return;
 
     this.isRunning = true;
@@ -39,6 +43,9 @@ export class AutoBackupService {
 
   // Check if backup is needed and schedule next backup
   private scheduleNextBackup(): void {
+    // DISABLED - return early to prevent Google Sheets backup
+    return;
+    
     const lastBackup = this.getLastBackupTime();
     const now = Date.now();
     const timeSinceLastBackup = now - lastBackup;
@@ -60,6 +67,11 @@ export class AutoBackupService {
 
   // Perform the actual backup
   private async performBackup(): Promise<void> {
+    console.log('Google backup temporarily disabled');
+    return;
+    
+    // Disabled Google backup functionality
+    /*
     try {
       // Only backup if user is authenticated
       if (!isUserAuthenticated()) {
@@ -86,6 +98,7 @@ export class AutoBackupService {
     } catch (error) {
       console.error('Error during automatic backup:', error);
     }
+    */
   }
 
   // Get last backup timestamp
@@ -169,6 +182,11 @@ export class AutoBackupService {
 
   // Force an immediate backup
   public async forceBackup(): Promise<boolean> {
+    console.log('Google backup temporarily disabled');
+    return false;
+    
+    // Disabled Google backup functionality
+    /*
     try {
       if (!isUserAuthenticated()) {
         throw new Error('User not authenticated for Google Sheets');
@@ -190,6 +208,7 @@ export class AutoBackupService {
       console.error('Error during forced backup:', error);
       return false;
     }
+    */
   }
 
   // Get service status

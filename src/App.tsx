@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { RouteSheets } from './components/RouteSheets';
+import { SheetsHistory } from './components/SheetsHistory';
 import { RouteManagement } from './components/RouteManagement';
 import { Customers } from './components/Customers';
 import { Invoices } from './components/Invoices';
@@ -27,7 +28,9 @@ function App() {
       case 'dashboard':
         return <Dashboard onPageChange={setCurrentPage} />;
       case 'routes':
-        return <RouteSheets />;
+        return <RouteSheets onPageChange={setCurrentPage} />;
+      case 'sheets-history':
+        return <SheetsHistory />;
       case 'route-management':
         return <RouteManagement />;
       case 'customers':

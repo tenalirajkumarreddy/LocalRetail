@@ -5,7 +5,8 @@ const STORAGE_KEYS = {
   CUSTOMERS: 'sales_app_customers',
   TRANSACTIONS: 'sales_app_transactions',
   INVOICES: 'sales_app_invoices',
-  COUNTER: 'sales_app_customer_counter',
+  CUSTOMER_COUNTER: 'sales_app_customer_counter',
+  INVOICE_COUNTER: 'sales_app_invoice_counter',
   PRODUCTS: 'sales_app_products',
   COMPANY_SETTINGS: 'sales_app_company_settings'
 };
@@ -138,16 +139,30 @@ export const updateCustomer = (id: string, updates: Partial<Customer>): void => 
   }
 };
 
+export const deleteCustomer = (id: string): void => {
+  const customers = getCustomers();
+  const filteredCustomers = customers.filter(c => c.id !== id);
+  saveCustomers(filteredCustomers);
+};
+
 export const getCustomerById = (id: string): Customer | undefined => {
   return getCustomers().find(c => c.id === id);
 };
 
-// Generate 6-digit customer ID
+// Generate sequential customer ID starting from 100001
 export const generateCustomerId = (): string => {
-  let counter = parseInt(localStorage.getItem(STORAGE_KEYS.COUNTER) || '100000');
+  let counter = parseInt(localStorage.getItem(STORAGE_KEYS.CUSTOMER_COUNTER) || '100000');
   counter++;
-  localStorage.setItem(STORAGE_KEYS.COUNTER, counter.toString());
+  localStorage.setItem(STORAGE_KEYS.CUSTOMER_COUNTER, counter.toString());
   return counter.toString();
+};
+
+// Generate sequential invoice number starting from INV00001
+export const generateInvoiceNumber = (): string => {
+  let counter = parseInt(localStorage.getItem(STORAGE_KEYS.INVOICE_COUNTER) || '0');
+  counter++;
+  localStorage.setItem(STORAGE_KEYS.INVOICE_COUNTER, counter.toString());
+  return `INV${counter.toString().padStart(5, '0')}`;
 };
 
 // Transaction management
@@ -182,7 +197,7 @@ export const saveInvoices = (invoices: Invoice[]): void => {
 
 export const addInvoice = (invoice: Omit<Invoice, 'id' | 'invoiceNumber'>): string => {
   const invoices = getInvoices();
-  const invoiceNumber = `INV-${Date.now()}`;
+  const invoiceNumber = generateInvoiceNumber();
   
   const newInvoice = {
     ...invoice,

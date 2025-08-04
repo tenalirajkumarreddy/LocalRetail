@@ -7,9 +7,12 @@ import {
   Users,
   Phone,
   MapPin,
-  IndianRupee
+  IndianRupee,
+  Trash2,
+  MoreHorizontal,
+  ExternalLink
 } from 'lucide-react';
-import { getCustomers, addCustomer, updateCustomer, getCustomerTransactions } from '../utils/supabase-storage';
+import { getCustomers, addCustomer, updateCustomer, deleteCustomer, getCustomerTransactions } from '../utils/supabase-storage';
 import { Customer, Transaction } from '../types';
 
 export const Customers: React.FC = () => {
@@ -17,6 +20,7 @@ export const Customers: React.FC = () => {
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerTransactions, setCustomerTransactions] = useState<Transaction[]>([]);
@@ -27,6 +31,14 @@ export const Customers: React.FC = () => {
     address: '',
     route: '',
     openingBalance: 0,
+    productPrices: {} as { [key: string]: number }
+  });
+
+  const [editCustomer, setEditCustomer] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    route: '',
     productPrices: {} as { [key: string]: number }
   });
 
@@ -112,6 +124,63 @@ export const Customers: React.FC = () => {
     }
   };
 
+  const handleEditCustomer = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setEditCustomer({
+      name: customer.name,
+      phone: customer.phone,
+      address: customer.address,
+      route: customer.route,
+      productPrices: customer.productPrices
+    });
+    setShowEditModal(true);
+  };
+
+  const handleUpdateCustomer = async () => {
+    if (!selectedCustomer) return;
+
+    try {
+      await updateCustomer(selectedCustomer.id, {
+        name: editCustomer.name,
+        phone: editCustomer.phone,
+        address: editCustomer.address,
+        route: editCustomer.route,
+        productPrices: editCustomer.productPrices
+      });
+      
+      setShowEditModal(false);
+      await loadCustomers();
+      alert('Customer updated successfully!');
+    } catch (error) {
+      console.error('Error updating customer:', error);
+      alert('Error updating customer. Please try again.');
+    }
+  };
+
+  const handleDeleteCustomer = async (customer: Customer) => {
+    if (!confirm(`Are you sure you want to delete ${customer.name}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await deleteCustomer(customer.id);
+      await loadCustomers();
+      alert('Customer deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+      alert('Error deleting customer. Please try again.');
+    }
+  };
+
+  const handleCallCustomer = (phone: string) => {
+    window.open(`tel:${phone}`, '_self');
+  };
+
+  const handleLocationSearch = (address: string) => {
+    const query = encodeURIComponent(address);
+    window.open(`https://www.google.com/maps/search/${query}`, '_blank');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -176,7 +245,7 @@ export const Customers: React.FC = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Outstanding
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-40">
                     Actions
                   </th>
                 </tr>
@@ -201,13 +270,44 @@ export const Customers: React.FC = () => {
                         ₹{Math.abs(customer.outstandingAmount).toLocaleString()}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                      <button
-                        onClick={() => handleViewDetails(customer)}
-                        className="text-blue-600 hover:text-blue-800 p-1 rounded transition-colors"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleViewDetails(customer)}
+                          className="text-blue-600 hover:text-blue-800 p-1 rounded transition-colors"
+                          title="View Details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleEditCustomer(customer)}
+                          className="text-green-600 hover:text-green-800 p-1 rounded transition-colors"
+                          title="Edit Customer"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleCallCustomer(customer.phone)}
+                          className="text-purple-600 hover:text-purple-800 p-1 rounded transition-colors"
+                          title="Call Customer"
+                        >
+                          <Phone className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleLocationSearch(customer.address)}
+                          className="text-orange-600 hover:text-orange-800 p-1 rounded transition-colors"
+                          title="View Location"
+                        >
+                          <MapPin className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCustomer(customer)}
+                          className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
+                          title="Delete Customer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -351,6 +451,108 @@ export const Customers: React.FC = () => {
         </div>
       )}
 
+      {/* Edit Customer Modal */}
+      {showEditModal && selectedCustomer && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Edit Customer</h2>
+            </div>
+            
+            <div className="px-6 py-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Name *</label>
+                  <input
+                    type="text"
+                    value={editCustomer.name}
+                    onChange={(e) => setEditCustomer({...editCustomer, name: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Phone *</label>
+                  <input
+                    type="tel"
+                    value={editCustomer.phone}
+                    onChange={(e) => setEditCustomer({...editCustomer, phone: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                <input
+                  type="text"
+                  value={editCustomer.address}
+                  onChange={(e) => setEditCustomer({...editCustomer, address: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Route</label>
+                <input
+                  type="text"
+                  value={editCustomer.route}
+                  onChange={(e) => setEditCustomer({...editCustomer, route: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., A, B, C"
+                />
+              </div>
+
+              {products.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Product Prices</label>
+                  <div className="space-y-2">
+                    {products.map((product) => (
+                      <div key={product.id} className="flex items-center justify-between p-3 border rounded-md">
+                        <span className="font-medium">{product.name}</span>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm text-gray-500">₹</span>
+                          <input
+                            type="number"
+                            value={editCustomer.productPrices[product.id] || product.defaultPrice}
+                            onChange={(e) => setEditCustomer({
+                              ...editCustomer,
+                              productPrices: {
+                                ...editCustomer.productPrices,
+                                [product.id]: parseFloat(e.target.value) || 0
+                              }
+                            })}
+                            className="w-20 px-2 py-1 border border-gray-300 rounded text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            min="0"
+                            step="0.01"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateCustomer}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+              >
+                Update Customer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Customer Details Modal */}
       {showDetailsModal && selectedCustomer && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -429,9 +631,10 @@ export const Customers: React.FC = () => {
                       <thead className="bg-gray-50">
                         <tr>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Route</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Money Received</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Balance Change</th>
                         </tr>
                       </thead>
@@ -440,6 +643,12 @@ export const Customers: React.FC = () => {
                           <tr key={transaction.id}>
                             <td className="px-4 py-3 text-sm text-gray-900">
                               {new Date(transaction.date).toLocaleDateString()}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {transaction.routeId ? `Route ${transaction.routeId}` : '-'}
+                              {transaction.routeName && (
+                                <div className="text-xs text-gray-500">{transaction.routeName}</div>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-sm">
                               <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -452,11 +661,27 @@ export const Customers: React.FC = () => {
                                 {transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1)}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{transaction.invoiceNumber}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">₹{transaction.totalAmount.toLocaleString()}</td>
+                            <td className="px-4 py-3 text-sm font-medium">
+                              {transaction.type === 'sale' && transaction.totalAmount > 0 ? (
+                                <span className="text-red-600">
+                                  ₹{transaction.totalAmount.toLocaleString()}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium">
+                              {transaction.amountReceived > 0 ? (
+                                <span className="text-green-600">
+                                  ₹{transaction.amountReceived.toLocaleString()}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
                             <td className="px-4 py-3 text-sm font-medium">
                               <span className={transaction.balanceChange >= 0 ? 'text-red-600' : 'text-green-600'}>
-                                {transaction.balanceChange >= 0 ? '+' : ''}₹{transaction.balanceChange.toLocaleString()}
+                                {transaction.balanceChange >= 0 ? '+' : ''}₹{Math.abs(transaction.balanceChange).toLocaleString()}
                               </span>
                             </td>
                           </tr>

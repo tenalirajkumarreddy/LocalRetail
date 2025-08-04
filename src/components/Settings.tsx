@@ -9,11 +9,6 @@ import {
 } from 'lucide-react';
 import { getCompanySettings, saveCompanySettings, initializeDefaultData } from '../utils/supabase-storage';
 import { CompanySettings } from '../types';
-import { GoogleBackup } from './GoogleBackup';
-import { SimpleGoogleTest } from './SimpleGoogleTest';
-import { GoogleAuthAlternative } from './GoogleAuthAlternative';
-import { GoogleAPIRecovery } from './GoogleAPIRecovery';
-import { OAuthConfigHelper } from './OAuthConfigHelper';
 import { ConnectionStatus } from './ConnectionStatus';
 
 export const Settings: React.FC = () => {
@@ -220,30 +215,6 @@ export const Settings: React.FC = () => {
         {/* Connection Status Section */}
         <ConnectionStatus />
 
-        {/* Google Backup Section */}
-        <GoogleBackup />
-
-        {/* Google Authentication Tests */}
-        <div className="border-t border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900">Google Authentication Tests</h3>
-            <p className="text-sm text-gray-600 mt-1">Use these tools to test and troubleshoot Google authentication issues</p>
-          </div>
-          
-          <div className="px-6 py-6 space-y-6">
-            {/* OAuth Configuration Helper */}
-            <OAuthConfigHelper />
-            
-            {/* Google API Recovery Tool */}
-            <GoogleAPIRecovery />
-            
-            {/* Simple Test */}
-            <SimpleGoogleTest />
-            
-            {/* Alternative Methods for COOP Issues */}
-            <GoogleAuthAlternative />
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -57,6 +57,13 @@ export const RouteManagement: React.FC = () => {
     setEditingRoute(null);
   };
 
+  // Generate available route letters (A-Z)
+  const getAvailableRouteLetters = () => {
+    const allLetters = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i)); // A-Z
+    const usedLetters = routes.map(route => route.id);
+    return allLetters.filter(letter => !usedLetters.includes(letter) || (editingRoute && letter === editingRoute.id));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -65,9 +72,20 @@ export const RouteManagement: React.FC = () => {
       return;
     }
 
+    if (!formData.id.trim()) {
+      alert('Please select a route code (A-Z)');
+      return;
+    }
+
+    // Check if route code is already taken (for new routes)
+    if (!editingRoute && routes.some(route => route.id === formData.id)) {
+      alert('Route code already exists. Please select a different code.');
+      return;
+    }
+
     try {
       const routeData: RouteInfo = {
-        id: editingRoute ? editingRoute.id : formData.id || `R${Date.now()}`,
+        id: formData.id.toUpperCase(), // Ensure uppercase
         name: formData.name.trim(),
         description: formData.description.trim(),
         areas: formData.areas.split(',').map(area => area.trim()).filter(area => area),
@@ -92,7 +110,7 @@ export const RouteManagement: React.FC = () => {
           areas: routeData.areas,
           pincodes: routeData.pincodes,
           isActive: routeData.isActive
-        });
+        }, routeData.id); // Pass the selected route code as custom ID
       }
 
       resetForm();
@@ -164,14 +182,22 @@ export const RouteManagement: React.FC = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Route Management</h1>
-          <p className="text-gray-600">Manage delivery routes, areas, and pincodes</p>
+          <p className="text-gray-600">
+            Manage delivery routes using codes A-Z ({routes.length}/26 routes used)
+          </p>
+          {getAvailableRouteLetters().length > 0 && (
+            <p className="text-sm text-gray-500 mt-1">
+              Available codes: {getAvailableRouteLetters().join(', ')}
+            </p>
+          )}
         </div>
         <button
           onClick={() => setShowAddForm(true)}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          disabled={getAvailableRouteLetters().length === 0}
+          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
         >
           <Plus className="w-4 h-4 mr-2" />
-          Add Route
+          {getAvailableRouteLetters().length === 0 ? 'All Routes Used' : 'Add Route'}
         </button>
       </div>
 
@@ -188,16 +214,33 @@ export const RouteManagement: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Route ID *
+                  Route Code *
                 </label>
-                <input
-                  type="text"
-                  value={formData.id}
-                  onChange={(e) => setFormData({ ...formData, id: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., R001"
-                  disabled={!!editingRoute}
-                />
+                {editingRoute ? (
+                  <input
+                    type="text"
+                    value={formData.id}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed"
+                    disabled
+                  />
+                ) : (
+                  <select
+                    value={formData.id}
+                    onChange={(e) => setFormData({ ...formData, id: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                    <option value="">Select Route Code</option>
+                    {getAvailableRouteLetters().map(letter => (
+                      <option key={letter} value={letter}>
+                        Route {letter}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  Route codes are A-Z (26 routes maximum)
+                </p>
               </div>
 
               <div>
@@ -338,11 +381,18 @@ export const RouteManagement: React.FC = () => {
                 {routes.map((route) => (
                   <tr key={route.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{route.id} - {route.name}</div>
-                        <div className="text-sm text-gray-500">{route.description}</div>
-                        <div className="text-xs text-gray-400 mt-1">
-                          Updated: {route.updatedAt.toLocaleDateString()}
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0 w-10 h-10 mr-4">
+                          <div className="w-10 h-10 bg-blue-600 text-white rounded-lg flex items-center justify-center text-lg font-bold">
+                            {route.id}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{route.name}</div>
+                          <div className="text-sm text-gray-500">{route.description}</div>
+                          <div className="text-xs text-gray-400 mt-1">
+                            Updated: {route.updatedAt.toLocaleDateString()}
+                          </div>
                         </div>
                       </div>
                     </td>

@@ -8,7 +8,7 @@ import {
   Cloud,
   RefreshCw
 } from 'lucide-react';
-import { isUserAuthenticated } from '../utils/google-sheets';
+// import { isUserAuthenticated } from '../utils/google-sheets'; // DISABLED: Google integration disabled
 import { AutoBackupService } from '../utils/auto-backup';
 import { getStorageMode } from '../utils/supabase-storage';
 
@@ -32,8 +32,8 @@ export const ConnectionStatus: React.FC = () => {
     
     setIsChecking(true);
     try {
-      // Check Google authentication (without reinitializing)
-      setGoogleAuthStatus(isUserAuthenticated());
+      // Google authentication disabled
+      setGoogleAuthStatus(false);
       
       // Check Supabase connection
       const storageMode = getStorageMode();

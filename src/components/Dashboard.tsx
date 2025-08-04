@@ -13,13 +13,31 @@ import {
 } from 'lucide-react';
 import { getCustomers, getInvoices, getTransactions, getRoutes } from '../utils/supabase-storage';
 import { Customer, Invoice, Transaction } from '../types';
-import { testSupabaseConnection } from '../utils/test-supabase';
 
 interface DashboardProps {
   onPageChange?: (page: string) => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ onPageChange }) => {
+  // Simple connection test function
+  const testConnection = async () => {
+    try {
+      // Test by trying to get customers (this will test the storage connection)
+      await getCustomers();
+      return {
+        isConfigured: true,
+        connectionStatus: 'success' as const,
+        message: 'Connection successful'
+      };
+    } catch (error) {
+      return {
+        isConfigured: false,
+        connectionStatus: 'error' as const,
+        message: 'Connection failed'
+      };
+    }
+  };
+
   const [stats, setStats] = useState({
     totalCustomers: 0,
     totalRoutes: 0,
@@ -41,12 +59,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onPageChange }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const testConnection = async () => {
-          const result = await testSupabaseConnection();
+        const testDbConnection = async () => {
+          const result = await testConnection();
           setConnectionStatus(result);
         };
         
-        testConnection();
+        testDbConnection();
         
         const customers = await getCustomers();
         const invoices = await getInvoices();
@@ -150,7 +168,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onPageChange }) => {
                 {connectionStatus.message}
                 <button 
                   onClick={async () => {
-                    const result = await testSupabaseConnection();
+                    const result = await testConnection();
                     setConnectionStatus(result);
                   }}
                   className="ml-2 text-blue-600 hover:text-blue-800 underline"
@@ -241,7 +259,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onPageChange }) => {
               
               <button 
                 onClick={async () => {
-                  const result = await testSupabaseConnection();
+                  const result = await testConnection();
                   setConnectionStatus(result);
                 }}
                 className="flex items-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200"
