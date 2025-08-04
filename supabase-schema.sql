@@ -70,6 +70,20 @@ CREATE TABLE transactions (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Route Sheets Table (for tracking printed/digital route sheets)
+CREATE TABLE route_sheets (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  route_id TEXT NOT NULL,
+  route_name TEXT NOT NULL,
+  customers JSONB NOT NULL DEFAULT '[]', -- Array of customer objects with their data
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed')),
+  delivery_data JSONB NOT NULL DEFAULT '{}', -- Object with customer delivery quantities and amounts
+  amount_received JSONB NOT NULL DEFAULT '{}', -- Object with customer payment amounts
+  notes TEXT DEFAULT '',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Create indexes for better performance
 CREATE INDEX idx_customers_route ON customers(route);
 CREATE INDEX idx_customers_phone ON customers(phone);
@@ -79,6 +93,9 @@ CREATE INDEX idx_invoices_invoice_number ON invoices(invoice_number);
 CREATE INDEX idx_transactions_customer_id ON transactions(customer_id);
 CREATE INDEX idx_transactions_date ON transactions(date);
 CREATE INDEX idx_transactions_type ON transactions(type);
+CREATE INDEX idx_route_sheets_route_id ON route_sheets(route_id);
+CREATE INDEX idx_route_sheets_status ON route_sheets(status);
+CREATE INDEX idx_route_sheets_created_at ON route_sheets(created_at);
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE company_settings ENABLE ROW LEVEL SECURITY;
@@ -86,6 +103,7 @@ ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE route_sheets ENABLE ROW LEVEL SECURITY;
 
 -- Create policies for public access (adjust based on your needs)
 -- Note: These are permissive policies. In production, you should implement proper authentication and authorization
@@ -103,6 +121,9 @@ CREATE POLICY "Allow all operations on invoices" ON invoices
   FOR ALL USING (true) WITH CHECK (true);
 
 CREATE POLICY "Allow all operations on transactions" ON transactions
+  FOR ALL USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow all operations on route_sheets" ON route_sheets
   FOR ALL USING (true) WITH CHECK (true);
 
 -- Create functions for automatic timestamp updates
@@ -125,6 +146,9 @@ CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON customers
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_invoices_updated_at BEFORE UPDATE ON invoices
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_route_sheets_updated_at BEFORE UPDATE ON route_sheets
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Insert default company settings

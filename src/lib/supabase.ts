@@ -25,7 +25,8 @@ export const TABLES = {
   INVOICES: 'invoices',
   TRANSACTIONS: 'transactions',
   COMPANY_SETTINGS: 'company_settings',
-  ROUTES: 'route_infos'
+  ROUTES: 'route_infos',
+  SHEETS: 'route_sheets'
 } as const
 
 // Helper function to check if Supabase is properly configured

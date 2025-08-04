@@ -773,6 +773,35 @@ export interface SheetRecord {
 }
 
 export const getSheetHistory = async (): Promise<SheetRecord[]> => {
+  const mode = getStorageMode();
+  
+  if (mode === 'supabase') {
+    try {
+      const { data, error } = await supabase
+        .from(TABLES.SHEETS)
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      return (data || []).map(sheet => ({
+        id: sheet.id,
+        routeId: sheet.route_id,
+        routeName: sheet.route_name,
+        customers: sheet.customers || [],
+        status: sheet.status as 'active' | 'closed',
+        deliveryData: sheet.delivery_data || {},
+        amountReceived: sheet.amount_received || {},
+        notes: sheet.notes || '',
+        createdAt: new Date(sheet.created_at),
+        updatedAt: new Date(sheet.updated_at)
+      }));
+    } catch (error) {
+      handleError(error, 'get sheet history from Supabase');
+    }
+  }
+  
+  // Fallback to localStorage
   const data = localStorage.getItem('sales_app_sheets_history');
   return data ? JSON.parse(data).map((sheet: any) => ({
     ...sheet,
@@ -782,6 +811,33 @@ export const getSheetHistory = async (): Promise<SheetRecord[]> => {
 };
 
 export const saveSheetHistory = async (sheetRecord: Omit<SheetRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> => {
+  const mode = getStorageMode();
+  
+  if (mode === 'supabase') {
+    try {
+      const { data, error } = await supabase
+        .from(TABLES.SHEETS)
+        .insert({
+          route_id: sheetRecord.routeId,
+          route_name: sheetRecord.routeName,
+          customers: sheetRecord.customers,
+          status: sheetRecord.status,
+          delivery_data: sheetRecord.deliveryData,
+          amount_received: sheetRecord.amountReceived,
+          notes: sheetRecord.notes
+        })
+        .select('id')
+        .single();
+      
+      if (error) throw error;
+      
+      return data.id;
+    } catch (error) {
+      handleError(error, 'save sheet history to Supabase');
+    }
+  }
+  
+  // Fallback to localStorage
   const sheets = await getSheetHistory();
   const newSheet: SheetRecord = {
     ...sheetRecord,
@@ -796,6 +852,32 @@ export const saveSheetHistory = async (sheetRecord: Omit<SheetRecord, 'id' | 'cr
 };
 
 export const updateSheetRecord = async (id: string, updates: Partial<SheetRecord>): Promise<void> => {
+  const mode = getStorageMode();
+  
+  if (mode === 'supabase') {
+    try {
+      const { error } = await supabase
+        .from(TABLES.SHEETS)
+        .update({
+          route_id: updates.routeId,
+          route_name: updates.routeName,
+          customers: updates.customers,
+          status: updates.status,
+          delivery_data: updates.deliveryData,
+          amount_received: updates.amountReceived,
+          notes: updates.notes,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+      
+      if (error) throw error;
+      return;
+    } catch (error) {
+      handleError(error, 'update sheet record in Supabase');
+    }
+  }
+  
+  // Fallback to localStorage
   const sheets = await getSheetHistory();
   const index = sheets.findIndex(sheet => sheet.id === id);
   
@@ -806,6 +888,23 @@ export const updateSheetRecord = async (id: string, updates: Partial<SheetRecord
 };
 
 export const deleteSheetRecord = async (id: string): Promise<void> => {
+  const mode = getStorageMode();
+  
+  if (mode === 'supabase') {
+    try {
+      const { error } = await supabase
+        .from(TABLES.SHEETS)
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      return;
+    } catch (error) {
+      handleError(error, 'delete sheet record from Supabase');
+    }
+  }
+  
+  // Fallback to localStorage
   const sheets = await getSheetHistory();
   const filteredSheets = sheets.filter(sheet => sheet.id !== id);
   localStorage.setItem('sales_app_sheets_history', JSON.stringify(filteredSheets));
@@ -899,11 +998,8 @@ export const closeSheetRecord = async (id: string): Promise<void> => {
   }
   
   // Mark sheet as closed
-  sheets[sheetIndex] = {
-    ...sheet,
+  await updateSheetRecord(id, {
     status: 'closed',
     updatedAt: new Date()
-  };
-  
-  localStorage.setItem('sales_app_sheets_history', JSON.stringify(sheets));
+  });
 };
