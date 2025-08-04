@@ -297,7 +297,7 @@ export const addCustomer = async (customer: Omit<Customer, 'id' | 'createdAt' | 
       
       if (error) throw error;
       
-      return {
+      const newCustomer = {
         id: data.id,
         name: data.name,
         phone: data.phone || '',
@@ -309,6 +309,26 @@ export const addCustomer = async (customer: Omit<Customer, 'id' | 'createdAt' | 
         createdAt: new Date(data.created_at),
         updatedAt: new Date(data.updated_at)
       };
+      
+      // Create initial balance transaction if opening balance is not zero
+      if (customer.openingBalance !== 0) {
+        await addTransaction({
+          customerId: newCustomer.id,
+          customerName: newCustomer.name,
+          type: 'adjustment',
+          items: [],
+          totalAmount: 0,
+          amountReceived: 0,
+          balanceChange: customer.openingBalance,
+          date: new Date(),
+          invoiceNumber: `INITIAL-${newCustomer.id}`,
+          routeId: undefined,
+          routeName: undefined,
+          sheetId: undefined
+        });
+      }
+      
+      return newCustomer;
     } catch (error) {
       handleError(error, 'add customer to Supabase');
     }
@@ -316,7 +336,27 @@ export const addCustomer = async (customer: Omit<Customer, 'id' | 'createdAt' | 
   
   // Fallback to localStorage
   const { addCustomer: localAddCustomer } = await import('./storage');
-  return localAddCustomer(customer);
+  const newCustomer = localAddCustomer(customer);
+  
+  // Create initial balance transaction for localStorage as well
+  if (customer.openingBalance !== 0) {
+    await addTransaction({
+      customerId: newCustomer.id,
+      customerName: newCustomer.name,
+      type: 'adjustment',
+      items: [],
+      totalAmount: 0,
+      amountReceived: 0,
+      balanceChange: customer.openingBalance,
+      date: new Date(),
+      invoiceNumber: `INITIAL-${newCustomer.id}`,
+      routeId: undefined,
+      routeName: undefined,
+      sheetId: undefined
+    });
+  }
+  
+  return newCustomer;
 };
 
 // Invoices
@@ -378,7 +418,10 @@ export const getTransactions = async (): Promise<Transaction[]> => {
         amountReceived: parseFloat(t.amount_received) || 0,
         balanceChange: parseFloat(t.balance_change) || 0,
         date: new Date(t.date),
-        invoiceNumber: t.invoice_number || ''
+        invoiceNumber: t.invoice_number || '',
+        routeId: t.route_id || undefined,
+        routeName: t.route_name || undefined,
+        sheetId: t.sheet_id || undefined
       }));
     } catch (error) {
       handleError(error, 'get transactions from Supabase');
@@ -505,6 +548,8 @@ export const addTransaction = async (transaction: Omit<Transaction, 'id'>): Prom
   
   if (mode === 'supabase') {
     try {
+      // For now, skip route fields if they don't exist in Supabase schema
+      // This allows the system to work with localStorage as primary storage
       const { error } = await supabase
         .from(TABLES.TRANSACTIONS)
         .insert({
@@ -517,6 +562,8 @@ export const addTransaction = async (transaction: Omit<Transaction, 'id'>): Prom
           balance_change: transaction.balanceChange,
           invoice_number: transaction.invoiceNumber,
           date: transaction.date.toISOString()
+          // Note: route_id, route_name, sheet_id skipped for Supabase compatibility
+          // These fields are stored in localStorage version
         });
       
       if (error) throw error;
@@ -782,63 +829,65 @@ export const closeSheetRecord = async (id: string): Promise<void> => {
     const customerTotal = Object.values(customerDeliveryData)
       .reduce((sum, item) => sum + item.amount, 0);
     
-    // Create sale transaction if customer purchased products
-    if (customerTotal > 0) {
-      const saleItems: InvoiceItem[] = [];
+    // Process transaction if either purchase total OR amount received is not zero
+    if (customerTotal > 0 || amountReceived > 0) {
       
-      // Convert delivery data to invoice items
-      for (const [productId, data] of Object.entries(customerDeliveryData)) {
-        if (data.quantity > 0) {
-          const product = products.find(p => p.id === productId);
-          if (product) {
-            saleItems.push({
-              productName: product.name,
-              quantity: data.quantity,
-              price: data.amount / data.quantity, // Calculate unit price
-              total: data.amount
-            });
+      // Create sale transaction if customer purchased products
+      if (customerTotal > 0) {
+        const saleItems: InvoiceItem[] = [];
+        
+        // Convert delivery data to invoice items
+        for (const [productId, data] of Object.entries(customerDeliveryData)) {
+          if (data.quantity > 0) {
+            const product = products.find(p => p.id === productId);
+            if (product) {
+              saleItems.push({
+                productName: product.name,
+                quantity: data.quantity,
+                price: data.amount / data.quantity, // Calculate unit price
+                total: data.amount
+              });
+            }
           }
         }
+        
+        // Add sale transaction
+        await addTransaction({
+          customerId: customer.id,
+          customerName: customer.name,
+          type: 'sale',
+          items: saleItems,
+          totalAmount: customerTotal,
+          amountReceived: 0, // Payment is separate transaction
+          balanceChange: customerTotal, // Increases outstanding
+          date: new Date(),
+          invoiceNumber: `SHEET-${sheet.id}-${customer.id}`,
+          routeId: sheet.routeId,
+          routeName: sheet.routeName,
+          sheetId: sheet.id
+        });
       }
       
-      // Add sale transaction
-      await addTransaction({
-        customerId: customer.id,
-        customerName: customer.name,
-        type: 'sale',
-        items: saleItems,
-        totalAmount: customerTotal,
-        amountReceived: 0, // Payment is separate transaction
-        balanceChange: customerTotal, // Increases outstanding
-        date: new Date(),
-        invoiceNumber: `SHEET-${sheet.id}-${customer.id}`,
-        routeId: sheet.routeId,
-        routeName: sheet.routeName,
-        sheetId: sheet.id
-      });
-    }
-    
-    // Create payment transaction if customer paid money
-    if (amountReceived > 0) {
-      await addTransaction({
-        customerId: customer.id,
-        customerName: customer.name,
-        type: 'payment',
-        items: [],
-        totalAmount: 0,
-        amountReceived: amountReceived,
-        balanceChange: -amountReceived, // Reduces outstanding
-        date: new Date(),
-        invoiceNumber: `PAY-${sheet.id}-${customer.id}`,
-        routeId: sheet.routeId,
-        routeName: sheet.routeName,
-        sheetId: sheet.id
-      });
-    }
-    
-    // Update customer's outstanding amount
-    const outstandingChange = customerTotal - amountReceived;
-    if (outstandingChange !== 0 || amountReceived > 0) {
+      // Create payment transaction if customer paid money
+      if (amountReceived > 0) {
+        await addTransaction({
+          customerId: customer.id,
+          customerName: customer.name,
+          type: 'payment',
+          items: [],
+          totalAmount: 0,
+          amountReceived: amountReceived,
+          balanceChange: -amountReceived, // Reduces outstanding
+          date: new Date(),
+          invoiceNumber: `PAY-${sheet.id}-${customer.id}`,
+          routeId: sheet.routeId,
+          routeName: sheet.routeName,
+          sheetId: sheet.id
+        });
+      }
+      
+      // Update customer's outstanding amount
+      const outstandingChange = customerTotal - amountReceived;
       const updatedCustomer = {
         ...customer,
         outstandingAmount: customer.outstandingAmount + outstandingChange

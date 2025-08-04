@@ -8,9 +8,7 @@ import {
   Phone,
   MapPin,
   IndianRupee,
-  Trash2,
-  MoreHorizontal,
-  ExternalLink
+  Trash2
 } from 'lucide-react';
 import { getCustomers, addCustomer, updateCustomer, deleteCustomer, getCustomerTransactions } from '../utils/supabase-storage';
 import { Customer, Transaction } from '../types';
@@ -656,15 +654,24 @@ export const Customers: React.FC = () => {
                                   ? 'bg-blue-100 text-blue-800'
                                   : transaction.type === 'payment'
                                   ? 'bg-green-100 text-green-800'
+                                  : transaction.type === 'adjustment'
+                                  ? 'bg-purple-100 text-purple-800'
                                   : 'bg-yellow-100 text-yellow-800'
                               }`}>
-                                {transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1)}
+                                {transaction.type === 'adjustment' && transaction.invoiceNumber.startsWith('INITIAL-') 
+                                  ? 'Initial Balance'
+                                  : transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1)
+                                }
                               </span>
                             </td>
                             <td className="px-4 py-3 text-sm font-medium">
                               {transaction.type === 'sale' && transaction.totalAmount > 0 ? (
                                 <span className="text-red-600">
                                   ₹{transaction.totalAmount.toLocaleString()}
+                                </span>
+                              ) : transaction.type === 'adjustment' && transaction.balanceChange > 0 ? (
+                                <span className="text-purple-600">
+                                  ₹{transaction.balanceChange.toLocaleString()}
                                 </span>
                               ) : (
                                 <span className="text-gray-400">-</span>
