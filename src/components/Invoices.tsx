@@ -10,17 +10,19 @@ import {
 import { 
   getInvoices, 
   getCustomers, 
+  getProducts,
   addInvoice, 
   addTransaction, 
   updateCustomer, 
   getCustomerById 
 } from '../utils/storage';
-import { Invoice, Customer, InvoiceItem } from '../types';
+import { Invoice, Customer, InvoiceItem, Product } from '../types';
 
 export const Invoices: React.FC = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -39,6 +41,7 @@ export const Invoices: React.FC = () => {
   useEffect(() => {
     loadInvoices();
     loadCustomers();
+    loadProducts();
   }, []);
 
   useEffect(() => {
@@ -60,6 +63,10 @@ export const Invoices: React.FC = () => {
     setCustomers(allCustomers);
   };
 
+  const loadProducts = () => {
+    const allProducts = getProducts();
+    setProducts(allProducts);
+  };
   const handleCustomerSearch = (value: string) => {
     setCustomerSearch(value);
     if (value.length >= 2) {
@@ -367,17 +374,10 @@ export const Invoices: React.FC = () => {
                         onChange={(e) => {
                           const productName = e.target.value;
                           let price = 0;
-                          if (selectedCustomer) {
-                            switch (productName) {
-                              case 'Product 1':
-                                price = selectedCustomer.productPrices.product1;
-                                break;
-                              case 'Product 2':
-                                price = selectedCustomer.productPrices.product2;
-                                break;
-                              case 'Product 3':
-                                price = selectedCustomer.productPrices.product3;
-                                break;
+                          if (selectedCustomer && productName) {
+                            const product = products.find(p => p.name === productName);
+                            if (product) {
+                              price = selectedCustomer.productPrices[product.id] || product.defaultPrice;
                             }
                           }
                           updateInvoiceItem(index, 'productName', productName);
@@ -386,9 +386,9 @@ export const Invoices: React.FC = () => {
                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                       >
                         <option value="">Select Product</option>
-                        <option value="Product 1">Product 1</option>
-                        <option value="Product 2">Product 2</option>
-                        <option value="Product 3">Product 3</option>
+                        {products.map((product) => (
+                          <option key={product.id} value={product.name}>{product.name}</option>
+                        ))}
                       </select>
                     </div>
                     <div>

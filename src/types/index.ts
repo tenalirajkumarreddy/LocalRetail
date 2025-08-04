@@ -1,15 +1,30 @@
 // Core types for the sales management system
+export interface Product {
+  id: string;
+  name: string;
+  defaultPrice: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CompanySettings {
+  companyName: string;
+  address: string;
+  phone: string;
+  email: string;
+  updatedAt: Date;
+}
+
 export interface Customer {
   id: string; // 6-digit unique ID
   name: string;
   phone: string;
+  address: string;
   route: string;
   openingBalance: number;
   outstandingAmount: number;
   productPrices: {
-    product1: number;
-    product2: number;
-    product3: number;
+    [productId: string]: number;
   };
   createdAt: Date;
   updatedAt: Date;

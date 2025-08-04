@@ -4,6 +4,8 @@ import { Dashboard } from './components/Dashboard';
 import { RouteSheets } from './components/RouteSheets';
 import { Customers } from './components/Customers';
 import { Invoices } from './components/Invoices';
+import { Products } from './components/Products';
+import { Settings } from './components/Settings';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
@@ -18,6 +20,10 @@ function App() {
         return <Customers />;
       case 'invoices':
         return <Invoices />;
+      case 'products':
+        return <Products />;
+      case 'settings':
+        return <Settings />;
       default:
         return <Dashboard />;
     }

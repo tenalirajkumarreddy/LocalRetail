@@ -1,9 +1,13 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { Customer } from '../types';
+import { Customer, Product, CompanySettings } from '../types';
 import { format } from 'date-fns';
+import { getProducts, getCompanySettings } from './storage';
 
 export const generateRouteSheetPDF = async (route: string, customers: Customer[]): Promise<void> => {
+  const products = getProducts();
+  const companySettings = getCompanySettings();
+  
   // Create a temporary div for the route sheet
   const tempDiv = document.createElement('div');
   tempDiv.style.position = 'absolute';
@@ -15,63 +19,62 @@ export const generateRouteSheetPDF = async (route: string, customers: Customer[]
   tempDiv.style.backgroundColor = 'white';
 
   tempDiv.innerHTML = `
-    <div style="text-align: center; margin-bottom: 30px;">
-      <h1 style="font-size: 24px; margin-bottom: 10px; color: #1f2937;">Route ${route} - Delivery Sheet</h1>
-      <p style="color: #6b7280; margin: 0;">Generated on: ${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
-      <p style="color: #6b7280; margin: 5px 0 0 0;">Total Customers: ${customers.length}</p>
+    <div style="text-align: center; margin-bottom: 20px; border: 2px solid #000;">
+      <h1 style="font-size: 24px; margin: 10px 0; color: #000; font-weight: bold;">${companySettings.companyName}</h1>
     </div>
 
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+    <div style="display: flex; justify-content: space-between; margin-bottom: 20px; border: 1px solid #000;">
+      <div style="border-right: 1px solid #000; padding: 8px; flex: 1;">
+        <strong>Date:</strong> ${format(new Date(), 'dd/MM/yyyy')}
+      </div>
+      <div style="border-right: 1px solid #000; padding: 8px; flex: 1;">
+        <strong>Time:</strong> ${format(new Date(), 'HH:mm')}
+      </div>
+      <div style="border-right: 1px solid #000; padding: 8px; flex: 1;">
+        <strong>Route:</strong> ${route}
+      </div>
+      <div style="padding: 8px; flex: 1;">
+        <strong>Agent:</strong> ________________
+      </div>
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; border: 2px solid #000;">
       <thead>
-        <tr style="background-color: #f3f4f6;">
-          <th style="border: 1px solid #d1d5db; padding: 12px; text-align: left; font-weight: bold;">S.No</th>
-          <th style="border: 1px solid #d1d5db; padding: 12px; text-align: left; font-weight: bold;">Customer ID</th>
-          <th style="border: 1px solid #d1d5db; padding: 12px; text-align: left; font-weight: bold;">Customer Name</th>
-          <th style="border: 1px solid #d1d5db; padding: 12px; text-align: left; font-weight: bold;">Phone</th>
-          <th style="border: 1px solid #d1d5db; padding: 12px; text-align: left; font-weight: bold;">Product 1 Price</th>
-          <th style="border: 1px solid #d1d5db; padding: 12px; text-align: left; font-weight: bold;">Product 2 Price</th>
-          <th style="border: 1px solid #d1d5db; padding: 12px; text-align: left; font-weight: bold;">Product 3 Price</th>
-          <th style="border: 1px solid #d1d5db; padding: 12px; text-align: left; font-weight: bold;">Outstanding</th>
-          <th style="border: 1px solid #d1d5db; padding: 12px; text-align: left; font-weight: bold;">Signature</th>
+        <tr>
+          <th rowspan="2" style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold; vertical-align: middle;">S.No</th>
+          <th rowspan="2" style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold; vertical-align: middle;">Customer ID</th>
+          <th rowspan="2" style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold; vertical-align: middle;">Customer Name</th>
+          <th rowspan="2" style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold; vertical-align: middle;">Phone Number</th>
+          <th rowspan="2" style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold; vertical-align: middle;">Area</th>
+          <th colspan="6" style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold;">Cases</th>
+          <th rowspan="2" style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold; vertical-align: middle;">Amount Pending</th>
+          <th rowspan="2" style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold; vertical-align: middle;">Amount Received</th>
+        </tr>
+        <tr>
+          ${products.map(product => `
+            <th style="border: 1px solid #000; padding: 4px; text-align: center; font-weight: bold; font-size: 10px;">${product.name}</th>
+            <th style="border: 1px solid #000; padding: 4px; text-align: center; font-weight: bold; font-size: 10px;">Rate</th>
+          `).join('')}
         </tr>
       </thead>
       <tbody>
         ${customers.map((customer, index) => `
-          <tr style="${index % 2 === 0 ? 'background-color: #f9fafb;' : ''}">
-            <td style="border: 1px solid #d1d5db; padding: 12px;">${index + 1}</td>
-            <td style="border: 1px solid #d1d5db; padding: 12px; font-weight: bold;">${customer.id}</td>
-            <td style="border: 1px solid #d1d5db; padding: 12px;">${customer.name}</td>
-            <td style="border: 1px solid #d1d5db; padding: 12px;">${customer.phone}</td>
-            <td style="border: 1px solid #d1d5db; padding: 12px;">₹${customer.productPrices.product1}</td>
-            <td style="border: 1px solid #d1d5db; padding: 12px;">₹${customer.productPrices.product2}</td>
-            <td style="border: 1px solid #d1d5db; padding: 12px;">₹${customer.productPrices.product3}</td>
-            <td style="border: 1px solid #d1d5db; padding: 12px; color: ${customer.outstandingAmount >= 0 ? '#dc2626' : '#16a34a'};">₹${Math.abs(customer.outstandingAmount)}</td>
-            <td style="border: 1px solid #d1d5db; padding: 12px; height: 40px;"></td>
+          <tr>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${index + 1}</td>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold;">${customer.id}</td>
+            <td style="border: 1px solid #000; padding: 8px;">${customer.name}</td>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${customer.phone}</td>
+            <td style="border: 1px solid #000; padding: 8px;">${customer.address || ''}</td>
+            ${products.map(product => `
+              <td style="border: 1px solid #000; padding: 8px; text-align: center; width: 40px;"></td>
+              <td style="border: 1px solid #000; padding: 8px; text-align: center; font-size: 10px;">₹${customer.productPrices[product.id] || 0}</td>
+            `).join('')}
+            <td style="border: 1px solid #000; padding: 8px; text-align: center;">₹${Math.abs(customer.outstandingAmount)}</td>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center; width: 80px;"></td>
           </tr>
         `).join('')}
       </tbody>
     </table>
-
-    <div style="margin-top: 40px; display: flex; justify-content: space-between;">
-      <div>
-        <p style="margin: 0; font-weight: bold;">Delivery Person: ________________</p>
-        <p style="margin: 10px 0 0 0;">Date: ________________</p>
-      </div>
-      <div>
-        <p style="margin: 0; font-weight: bold;">Supervisor Signature: ________________</p>
-        <p style="margin: 10px 0 0 0;">Time: ________________</p>
-      </div>
-    </div>
-
-    <div style="margin-top: 30px; padding: 15px; background-color: #f3f4f6; border-radius: 8px;">
-      <h3 style="margin: 0 0 10px 0; color: #374151;">Instructions:</h3>
-      <ul style="margin: 0; padding-left: 20px;">
-        <li>Verify customer ID and phone number before delivery</li>
-        <li>Collect payment and update outstanding amount</li>
-        <li>Get customer signature for confirmation</li>
-        <li>Report any issues to supervisor immediately</li>
-      </ul>
-    </div>
   `;
 
   document.body.appendChild(tempDiv);

@@ -4,6 +4,8 @@ import {
   FileText, 
   Route, 
   Home,
+  Package,
+  Settings,
   Menu,
   X
 } from 'lucide-react';
@@ -22,6 +24,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageCha
     { name: 'Route Sheets', id: 'routes', icon: Route },
     { name: 'Customers', id: 'customers', icon: Users },
     { name: 'Invoices', id: 'invoices', icon: FileText },
+    { name: 'Products', id: 'products', icon: Package },
+    { name: 'Settings', id: 'settings', icon: Settings },
   ];
 
   return (

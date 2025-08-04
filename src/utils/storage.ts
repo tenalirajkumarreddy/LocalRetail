@@ -1,17 +1,111 @@
-import { Customer, Transaction, Invoice } from '../types';
+import { Customer, Transaction, Invoice, Product, CompanySettings } from '../types';
 
 // Local storage keys
 const STORAGE_KEYS = {
   CUSTOMERS: 'sales_app_customers',
   TRANSACTIONS: 'sales_app_transactions',
   INVOICES: 'sales_app_invoices',
-  COUNTER: 'sales_app_customer_counter'
+  COUNTER: 'sales_app_customer_counter',
+  PRODUCTS: 'sales_app_products',
+  COMPANY_SETTINGS: 'sales_app_company_settings'
+};
+
+// Initialize default data
+export const initializeDefaultData = (): void => {
+  // Initialize default products if they don't exist
+  const existingProducts = getProducts();
+  if (existingProducts.length === 0) {
+    const defaultProducts: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>[] = [
+      { name: 'Product A', defaultPrice: 100 },
+      { name: 'Product B', defaultPrice: 150 },
+      { name: 'Product C', defaultPrice: 200 }
+    ];
+    
+    defaultProducts.forEach(product => addProduct(product));
+  }
+
+  // Initialize default company settings if they don't exist
+  const existingSettings = getCompanySettings();
+  if (!existingSettings.companyName) {
+    saveCompanySettings({
+      companyName: 'COMPANY NAME',
+      address: 'Company Address',
+      phone: '+91 9876543210',
+      email: 'info@company.com',
+      updatedAt: new Date()
+    });
+  }
+};
+
+// Product management
+export const getProducts = (): Product[] => {
+  const data = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
+  return data ? JSON.parse(data).map((p: any) => ({ 
+    ...p, 
+    createdAt: new Date(p.createdAt), 
+    updatedAt: new Date(p.updatedAt) 
+  })) : [];
+};
+
+export const saveProducts = (products: Product[]): void => {
+  localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+};
+
+export const addProduct = (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>): Product => {
+  const products = getProducts();
+  const newProduct: Product = {
+    ...product,
+    id: Date.now().toString(),
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+  
+  products.push(newProduct);
+  saveProducts(products);
+  return newProduct;
+};
+
+export const updateProduct = (id: string, updates: Partial<Product>): void => {
+  const products = getProducts();
+  const index = products.findIndex(p => p.id === id);
+  if (index !== -1) {
+    products[index] = { ...products[index], ...updates, updatedAt: new Date() };
+    saveProducts(products);
+  }
+};
+
+export const deleteProduct = (id: string): void => {
+  const products = getProducts().filter(p => p.id !== id);
+  saveProducts(products);
+};
+
+// Company settings management
+export const getCompanySettings = (): CompanySettings => {
+  const data = localStorage.getItem(STORAGE_KEYS.COMPANY_SETTINGS);
+  return data ? { 
+    ...JSON.parse(data), 
+    updatedAt: new Date(JSON.parse(data).updatedAt) 
+  } : {
+    companyName: '',
+    address: '',
+    phone: '',
+    email: '',
+    updatedAt: new Date()
+  };
+};
+
+export const saveCompanySettings = (settings: CompanySettings): void => {
+  localStorage.setItem(STORAGE_KEYS.COMPANY_SETTINGS, JSON.stringify(settings));
 };
 
 // Customer management
 export const getCustomers = (): Customer[] => {
   const data = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
-  return data ? JSON.parse(data) : [];
+  return data ? JSON.parse(data).map((c: any) => ({ 
+    ...c, 
+    createdAt: new Date(c.createdAt), 
+    updatedAt: new Date(c.updatedAt) 
+  })) : [];
 };
 
 export const saveCustomers = (customers: Customer[]): void => {

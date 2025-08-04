@@ -24,17 +24,17 @@ export const Customers: React.FC = () => {
   const [newCustomer, setNewCustomer] = useState({
     name: '',
     phone: '',
+    address: '',
     route: '',
     openingBalance: 0,
-    productPrices: {
-      product1: 0,
-      product2: 0,
-      product3: 0
-    }
+    productPrices: {} as { [key: string]: number }
   });
+
+  const [products, setProducts] = useState<any[]>([]);
 
   useEffect(() => {
     loadCustomers();
+    loadProducts();
   }, []);
 
   useEffect(() => {
@@ -52,6 +52,18 @@ export const Customers: React.FC = () => {
     setCustomers(allCustomers);
   };
 
+  const loadProducts = () => {
+    const { getProducts } = require('../utils/storage');
+    const allProducts = getProducts();
+    setProducts(allProducts);
+    
+    // Initialize product prices with default values
+    const defaultPrices: { [key: string]: number } = {};
+    allProducts.forEach((product: any) => {
+      defaultPrices[product.id] = product.defaultPrice;
+    });
+    setNewCustomer(prev => ({ ...prev, productPrices: defaultPrices }));
+  };
   const handleAddCustomer = () => {
     if (!newCustomer.name.trim() || !newCustomer.phone.trim() || !newCustomer.route.trim()) {
       alert('Please fill in all required fields');
@@ -64,14 +76,12 @@ export const Customers: React.FC = () => {
     setNewCustomer({
       name: '',
       phone: '',
+      address: '',
       route: '',
       openingBalance: 0,
-      productPrices: {
-        product1: 0,
-        product2: 0,
-        product3: 0
-      }
+      productPrices: {}
     });
+    loadProducts(); // Reload to reset product prices
   };
 
   const handleViewDetails = (customer: Customer) => {
@@ -231,6 +241,19 @@ export const Customers: React.FC = () => {
                     placeholder="Enter phone number"
                   />
                 </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Address
+                  </label>
+                  <input
+                    type="text"
+                    value={newCustomer.address}
+                    onChange={(e) => setNewCustomer({...newCustomer, address: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter customer address"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -264,62 +287,27 @@ export const Customers: React.FC = () => {
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-3">Product Prices</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Product 1 Price
-                    </label>
-                    <input
-                      type="number"
-                      value={newCustomer.productPrices.product1}
-                      onChange={(e) => setNewCustomer({
-                        ...newCustomer, 
-                        productPrices: {
-                          ...newCustomer.productPrices, 
-                          product1: parseFloat(e.target.value) || 0
-                        }
-                      })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="₹0"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Product 2 Price
-                    </label>
-                    <input
-                      type="number"
-                      value={newCustomer.productPrices.product2}
-                      onChange={(e) => setNewCustomer({
-                        ...newCustomer, 
-                        productPrices: {
-                          ...newCustomer.productPrices, 
-                          product2: parseFloat(e.target.value) || 0
-                        }
-                      })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="₹0"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Product 3 Price
-                    </label>
-                    <input
-                      type="number"
-                      value={newCustomer.productPrices.product3}
-                      onChange={(e) => setNewCustomer({
-                        ...newCustomer, 
-                        productPrices: {
-                          ...newCustomer.productPrices, 
-                          product3: parseFloat(e.target.value) || 0
-                        }
-                      })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="₹0"
-                    />
-                  </div>
+                  {products.map((product) => (
+                    <div key={product.id}>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {product.name} Price
+                      </label>
+                      <input
+                        type="number"
+                        value={newCustomer.productPrices[product.id] || 0}
+                        onChange={(e) => setNewCustomer({
+                          ...newCustomer, 
+                          productPrices: {
+                            ...newCustomer.productPrices, 
+                            [product.id]: parseFloat(e.target.value) || 0
+                          }
+                        })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder={`₹${product.defaultPrice}`}
+                        step="0.01"
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -402,18 +390,12 @@ export const Customers: React.FC = () => {
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-3">Product Prices</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <p className="text-sm font-medium text-gray-600">Product 1</p>
-                    <p className="text-xl font-bold text-gray-900">₹{selectedCustomer.productPrices.product1}</p>
-                  </div>
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <p className="text-sm font-medium text-gray-600">Product 2</p>
-                    <p className="text-xl font-bold text-gray-900">₹{selectedCustomer.productPrices.product2}</p>
-                  </div>
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <p className="text-sm font-medium text-gray-600">Product 3</p>
-                    <p className="text-xl font-bold text-gray-900">₹{selectedCustomer.productPrices.product3}</p>
-                  </div>
+                  {products.map((product) => (
+                    <div key={product.id} className="bg-gray-50 p-4 rounded-lg">
+                      <p className="text-sm font-medium text-gray-600">{product.name}</p>
+                      <p className="text-xl font-bold text-gray-900">₹{selectedCustomer.productPrices[product.id] || 0}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
 
