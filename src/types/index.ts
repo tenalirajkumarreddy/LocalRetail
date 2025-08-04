@@ -69,3 +69,14 @@ export interface RouteSheet {
   customers: Customer[];
   generatedAt: Date;
 }
+
+export interface RouteInfo {
+  id: string;
+  name: string;
+  description: string;
+  areas: string[];
+  pincodes: string[];
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}

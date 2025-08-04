@@ -15,7 +15,7 @@ import {
   addTransaction, 
   updateCustomer, 
   getCustomerById 
-} from '../utils/storage';
+} from '../utils/supabase-storage';
 import { Invoice, Customer, InvoiceItem, Product } from '../types';
 
 export const Invoices: React.FC = () => {
@@ -53,19 +53,31 @@ export const Invoices: React.FC = () => {
     setFilteredInvoices(filtered);
   }, [invoices, searchTerm]);
 
-  const loadInvoices = () => {
-    const allInvoices = getInvoices();
-    setInvoices(allInvoices);
+  const loadInvoices = async () => {
+    try {
+      const allInvoices = await getInvoices();
+      setInvoices(allInvoices);
+    } catch (error) {
+      console.error('Error loading invoices:', error);
+    }
   };
 
-  const loadCustomers = () => {
-    const allCustomers = getCustomers();
-    setCustomers(allCustomers);
+  const loadCustomers = async () => {
+    try {
+      const allCustomers = await getCustomers();
+      setCustomers(allCustomers);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+    }
   };
 
-  const loadProducts = () => {
-    const allProducts = getProducts();
-    setProducts(allProducts);
+  const loadProducts = async () => {
+    try {
+      const allProducts = await getProducts();
+      setProducts(allProducts);
+    } catch (error) {
+      console.error('Error loading products:', error);
+    }
   };
   const handleCustomerSearch = (value: string) => {
     setCustomerSearch(value);
@@ -122,51 +134,56 @@ export const Invoices: React.FC = () => {
     return newInvoice.items.reduce((sum, item) => sum + item.total, 0);
   };
 
-  const handleCreateInvoice = () => {
+  const handleCreateInvoice = async () => {
     if (!selectedCustomer || newInvoice.items.length === 0) {
       alert('Please select a customer and add at least one item');
       return;
     }
 
-    const subtotal = calculateSubtotal();
-    const balanceChange = subtotal - newInvoice.amountReceived;
+    try {
+      const subtotal = calculateSubtotal();
+      const balanceChange = subtotal - newInvoice.amountReceived;
 
-    const invoiceData = {
-      customerId: selectedCustomer.id,
-      customerName: selectedCustomer.name,
-      items: newInvoice.items,
-      subtotal,
-      totalAmount: subtotal,
-      amountReceived: newInvoice.amountReceived,
-      balanceChange,
-      date: new Date(),
-      status: (newInvoice.amountReceived >= subtotal ? 'paid' : 
-               newInvoice.amountReceived > 0 ? 'partial' : 'pending') as 'paid' | 'partial' | 'pending'
-    };
+      const invoiceData = {
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.name,
+        items: newInvoice.items,
+        subtotal,
+        totalAmount: subtotal,
+        amountReceived: newInvoice.amountReceived,
+        balanceChange,
+        date: new Date(),
+        status: (newInvoice.amountReceived >= subtotal ? 'paid' : 
+                 newInvoice.amountReceived > 0 ? 'partial' : 'pending') as 'paid' | 'partial' | 'pending'
+      };
 
-    const invoiceNumber = addInvoice(invoiceData);
+      const invoiceNumber = await addInvoice(invoiceData);
 
-    // Add transaction
-    addTransaction({
-      customerId: selectedCustomer.id,
-      customerName: selectedCustomer.name,
-      type: 'sale',
-      items: newInvoice.items,
-      totalAmount: subtotal,
-      amountReceived: newInvoice.amountReceived,
-      balanceChange,
-      date: new Date(),
-      invoiceNumber
-    });
+      // Add transaction
+      await addTransaction({
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.name,
+        type: 'sale',
+        items: newInvoice.items,
+        totalAmount: subtotal,
+        amountReceived: newInvoice.amountReceived,
+        balanceChange,
+        date: new Date(),
+        invoiceNumber
+      });
 
-    // Update customer outstanding amount
-    const newOutstanding = selectedCustomer.outstandingAmount + balanceChange;
-    updateCustomer(selectedCustomer.id, { outstandingAmount: newOutstanding });
+      // Update customer outstanding amount
+      const newOutstanding = selectedCustomer.outstandingAmount + balanceChange;
+      await updateCustomer(selectedCustomer.id, { outstandingAmount: newOutstanding });
 
-    loadInvoices();
-    loadCustomers();
-    setShowCreateModal(false);
-    resetNewInvoice();
+      await loadInvoices();
+      await loadCustomers();
+      setShowCreateModal(false);
+      resetNewInvoice();
+    } catch (error) {
+      console.error('Error creating invoice:', error);
+      alert('Error creating invoice. Please try again.');
+    }
   };
 
   const resetNewInvoice = () => {

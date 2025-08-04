@@ -7,7 +7,7 @@ import {
   Save,
   X
 } from 'lucide-react';
-import { getProducts, addProduct, updateProduct, deleteProduct, initializeDefaultData } from '../utils/storage';
+import { getProducts, addProduct, updateProduct, deleteProduct, initializeDefaultData } from '../utils/supabase-storage';
 import { Product } from '../types';
 
 export const Products: React.FC = () => {
@@ -24,45 +24,64 @@ export const Products: React.FC = () => {
     loadProducts();
   }, []);
 
-  const loadProducts = () => {
-    const allProducts = getProducts();
-    setProducts(allProducts);
+  const loadProducts = async () => {
+    try {
+      const allProducts = await getProducts();
+      setProducts(allProducts);
+    } catch (error) {
+      console.error('Error loading products:', error);
+    }
   };
 
-  const handleAddProduct = () => {
+  const handleAddProduct = async () => {
     if (!newProduct.name.trim()) {
       alert('Please enter a product name');
       return;
     }
 
-    addProduct(newProduct);
-    loadProducts();
-    setShowAddModal(false);
-    setNewProduct({ name: '', defaultPrice: 0 });
+    try {
+      await addProduct(newProduct);
+      await loadProducts();
+      setShowAddModal(false);
+      setNewProduct({ name: '', defaultPrice: 0 });
+    } catch (error) {
+      console.error('Error adding product:', error);
+      alert('Error adding product. Please try again.');
+    }
   };
 
   const handleEditProduct = (product: Product) => {
     setEditingProduct(product);
   };
 
-  const handleUpdateProduct = () => {
+  const handleUpdateProduct = async () => {
     if (!editingProduct || !editingProduct.name.trim()) {
       alert('Please enter a product name');
       return;
     }
 
-    updateProduct(editingProduct.id, {
-      name: editingProduct.name,
-      defaultPrice: editingProduct.defaultPrice
-    });
-    loadProducts();
-    setEditingProduct(null);
+    try {
+      await updateProduct(editingProduct.id, {
+        name: editingProduct.name,
+        defaultPrice: editingProduct.defaultPrice
+      });
+      await loadProducts();
+      setEditingProduct(null);
+    } catch (error) {
+      console.error('Error updating product:', error);
+      alert('Error updating product. Please try again.');
+    }
   };
 
-  const handleDeleteProduct = (id: string) => {
+  const handleDeleteProduct = async (id: string) => {
     if (confirm('Are you sure you want to delete this product? This action cannot be undone.')) {
-      deleteProduct(id);
-      loadProducts();
+      try {
+        await deleteProduct(id);
+        await loadProducts();
+      } catch (error) {
+        console.error('Error deleting product:', error);
+        alert('Error deleting product. Please try again.');
+      }
     }
   };
 

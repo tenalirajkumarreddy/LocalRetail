@@ -7,8 +7,10 @@ import {
   Package,
   Settings,
   Menu,
-  X
+  X,
+  MapPin
 } from 'lucide-react';
+import { StatusIndicator } from './StatusIndicator';
 
 interface LayoutProps {
   children: ReactNode;
@@ -22,6 +24,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageCha
   const navigation = [
     { name: 'Dashboard', id: 'dashboard', icon: Home },
     { name: 'Route Sheets', id: 'routes', icon: Route },
+    { name: 'Route Management', id: 'route-management', icon: MapPin },
     { name: 'Customers', id: 'customers', icon: Users },
     { name: 'Invoices', id: 'invoices', icon: FileText },
     { name: 'Products', id: 'products', icon: Package },
@@ -33,20 +36,20 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageCha
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden"
+          className="fixed inset-0 z-40 bg-black bg-opacity-50 md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform lg:translate-x-0 lg:static lg:inset-0 ${
+      {/* Sidebar - Hidden on all screens, only shown when hamburger is clicked */}
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
           <h1 className="text-xl font-bold text-gray-900">Sales Manager</h1>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="lg:hidden p-1 rounded-md hover:bg-gray-100"
+            className="p-1 rounded-md hover:bg-gray-100"
           >
             <X className="w-6 h-6" />
           </button>
@@ -76,23 +79,27 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageCha
         </nav>
       </div>
 
-      {/* Main content */}
-      <div className="lg:pl-64">
-        {/* Mobile header */}
-        <div className="lg:hidden flex items-center justify-between h-16 px-4 bg-white border-b border-gray-200">
+      {/* Main content - Full width on all screens */}
+      <div className="w-full">
+        {/* Header with hamburger menu - Shown on all screens */}
+        <div className="flex items-center justify-between h-16 px-4 bg-white border-b border-gray-200 shadow-sm">
           <button
             onClick={() => setSidebarOpen(true)}
             className="p-2 rounded-md hover:bg-gray-100"
           >
             <Menu className="w-6 h-6" />
           </button>
-          <h1 className="text-lg font-semibold text-gray-900">Sales Manager</h1>
-          <div className="w-10" />
+          <h1 className="text-lg font-semibold text-gray-900">
+            {navigation.find(nav => nav.id === currentPage)?.name || 'Sales Manager'}
+          </h1>
+          <StatusIndicator />
         </div>
 
         {/* Page content */}
-        <main className="p-6">
-          {children}
+        <main className="p-4 sm:p-6">
+          <div className="max-w-7xl mx-auto">
+            {children}
+          </div>
         </main>
       </div>
     </div>

@@ -9,7 +9,7 @@ import {
   MapPin,
   IndianRupee
 } from 'lucide-react';
-import { getCustomers, addCustomer, updateCustomer, getCustomerTransactions } from '../utils/storage';
+import { getCustomers, addCustomer, updateCustomer, getCustomerTransactions } from '../utils/supabase-storage';
 import { Customer, Transaction } from '../types';
 
 export const Customers: React.FC = () => {
@@ -47,48 +47,69 @@ export const Customers: React.FC = () => {
     setFilteredCustomers(filtered);
   }, [customers, searchTerm]);
 
-  const loadCustomers = () => {
-    const allCustomers = getCustomers();
-    setCustomers(allCustomers);
+  const loadCustomers = async () => {
+    try {
+      const allCustomers = await getCustomers();
+      setCustomers(allCustomers);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+    }
   };
 
-  const loadProducts = () => {
-    const { getProducts } = require('../utils/storage');
-    const allProducts = getProducts();
-    setProducts(allProducts);
-    
-    // Initialize product prices with default values
-    const defaultPrices: { [key: string]: number } = {};
-    allProducts.forEach((product: any) => {
-      defaultPrices[product.id] = product.defaultPrice;
-    });
-    setNewCustomer(prev => ({ ...prev, productPrices: defaultPrices }));
+  const loadProducts = async () => {
+    try {
+      const { getProducts } = await import('../utils/supabase-storage');
+      const allProducts = await getProducts();
+      setProducts(allProducts);
+      
+      // Initialize product prices with default values
+      const defaultPrices: { [key: string]: number } = {};
+      allProducts.forEach((product: any) => {
+        defaultPrices[product.id] = product.defaultPrice;
+      });
+      setNewCustomer(prev => ({ ...prev, productPrices: defaultPrices }));
+    } catch (error) {
+      console.error('Error loading products:', error);
+    }
   };
-  const handleAddCustomer = () => {
+
+  const handleAddCustomer = async () => {
     if (!newCustomer.name.trim() || !newCustomer.phone.trim() || !newCustomer.route.trim()) {
       alert('Please fill in all required fields');
       return;
     }
 
-    addCustomer(newCustomer);
-    loadCustomers();
-    setShowAddModal(false);
-    setNewCustomer({
-      name: '',
-      phone: '',
-      address: '',
-      route: '',
-      openingBalance: 0,
-      productPrices: {}
-    });
-    loadProducts(); // Reload to reset product prices
+    try {
+      await addCustomer({
+        ...newCustomer,
+        outstandingAmount: newCustomer.openingBalance // Initialize outstanding amount with opening balance
+      });
+      await loadCustomers();
+      setShowAddModal(false);
+      setNewCustomer({
+        name: '',
+        phone: '',
+        address: '',
+        route: '',
+        openingBalance: 0,
+        productPrices: {}
+      });
+      await loadProducts(); // Reload to reset product prices
+    } catch (error) {
+      console.error('Error adding customer:', error);
+      alert('Error adding customer. Please try again.');
+    }
   };
 
-  const handleViewDetails = (customer: Customer) => {
+  const handleViewDetails = async (customer: Customer) => {
     setSelectedCustomer(customer);
-    const transactions = getCustomerTransactions(customer.id);
-    setCustomerTransactions(transactions);
-    setShowDetailsModal(true);
+    try {
+      const transactions = await getCustomerTransactions(customer.id);
+      setCustomerTransactions(transactions);
+      setShowDetailsModal(true);
+    } catch (error) {
+      console.error('Error loading customer transactions:', error);
+    }
   };
 
   return (

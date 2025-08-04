@@ -1,24 +1,41 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Users, FileText, Search } from 'lucide-react';
-import { getRoutes, getCustomersByRoute } from '../utils/storage';
+import { Download, Users, FileText, Search, Cloud } from 'lucide-react';
+import { getRoutes, getCustomersByRoute, getProducts } from '../utils/supabase-storage';
 import { generateRouteSheetPDF } from '../utils/pdf';
-import { Customer } from '../types';
+import { backupRouteSheetToSheets, isUserAuthenticated } from '../utils/google-sheets';
+import { Customer, Product } from '../types';
 
 export const RouteSheets: React.FC = () => {
   const [routes, setRoutes] = useState<string[]>([]);
   const [selectedRoute, setSelectedRoute] = useState<string>('');
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const availableRoutes = getRoutes();
-    setRoutes(availableRoutes);
+    const loadInitialData = async () => {
+      try {
+        const [availableRoutes, allProducts] = await Promise.all([
+          getRoutes(),
+          getProducts()
+        ]);
+        setRoutes(availableRoutes);
+        setProducts(allProducts);
+      } catch (error) {
+        console.error('Error loading initial data:', error);
+      }
+    };
+    loadInitialData();
   }, []);
 
-  const handleRouteSelect = (route: string) => {
+  const handleRouteSelect = async (route: string) => {
     setSelectedRoute(route);
-    const routeCustomers = getCustomersByRoute(route);
-    setCustomers(routeCustomers);
+    try {
+      const routeCustomers = await getCustomersByRoute(route);
+      setCustomers(routeCustomers);
+    } catch (error) {
+      console.error('Error loading route customers:', error);
+    }
   };
 
   const handleDownloadPDF = async () => {
@@ -26,7 +43,22 @@ export const RouteSheets: React.FC = () => {
     
     setLoading(true);
     try {
+      // Generate PDF
       await generateRouteSheetPDF(selectedRoute, customers);
+      
+      // Backup to Google Sheets if authenticated
+      if (isUserAuthenticated()) {
+        try {
+          const success = await backupRouteSheetToSheets(selectedRoute, customers, products);
+          if (success) {
+            console.log(`Route sheet backed up to Google Sheets: ${selectedRoute}`);
+          }
+        } catch (error) {
+          console.error('Error backing up route sheet to Google Sheets:', error);
+          // Don't show error to user as PDF generation was successful
+        }
+      }
+      
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Error generating PDF. Please try again.');
@@ -53,36 +85,34 @@ export const RouteSheets: React.FC = () => {
           Select Route
         </h2>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Route
-            </label>
-            <select
-              value={selectedRoute}
-              onChange={(e) => handleRouteSelect(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select a route</option>
-              {routes.map((route) => (
-                <option key={route} value={route}>
-                  Route {route}
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          {selectedRoute && (
-            <>
-              <div className="flex items-end">
-                <div className="bg-blue-50 px-4 py-2 rounded-lg">
+        <div className="max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Route
+              </label>
+              <select
+                value={selectedRoute}
+                onChange={(e) => handleRouteSelect(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select a route</option>
+                {routes.map((route) => (
+                  <option key={route} value={route}>
+                    Route {route}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            {selectedRoute && (
+              <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-blue-50 p-4 rounded-lg">
                   <p className="text-sm text-blue-600 font-medium">Total Customers</p>
                   <p className="text-2xl font-bold text-blue-700">{customers.length}</p>
                 </div>
-              </div>
-              
-              <div className="flex items-end">
-                <div className={`px-4 py-2 rounded-lg ${totalOutstanding >= 0 ? 'bg-red-50' : 'bg-green-50'}`}>
+                
+                <div className={`p-4 rounded-lg ${totalOutstanding >= 0 ? 'bg-red-50' : 'bg-green-50'}`}>
                   <p className={`text-sm font-medium ${totalOutstanding >= 0 ? 'text-red-600' : 'text-green-600'}`}>
                     Total Outstanding
                   </p>
@@ -91,16 +121,22 @@ export const RouteSheets: React.FC = () => {
                   </p>
                 </div>
               </div>
-            </>
-          )}
+            )}
+          </div>
         </div>
 
         {selectedRoute && customers.length > 0 && (
-          <div className="mt-6 flex justify-end">
+          <div className="mt-6 flex justify-between items-center">
+            {isUserAuthenticated() && (
+              <div className="flex items-center text-sm text-green-600">
+                <Cloud className="w-4 h-4 mr-1" />
+                Will backup to Google Sheets
+              </div>
+            )}
             <button
               onClick={handleDownloadPDF}
               disabled={loading}
-              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors ml-auto"
             >
               <Download className="w-4 h-4 mr-2" />
               {loading ? 'Generating PDF...' : 'Download Route Sheet'}
@@ -135,15 +171,11 @@ export const RouteSheets: React.FC = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Phone
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Product 1
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Product 2
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Product 3
-                  </th>
+                  {products.map((product) => (
+                    <th key={product.id} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {product.name}
+                    </th>
+                  ))}
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Outstanding
                   </th>
@@ -164,15 +196,11 @@ export const RouteSheets: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {customer.phone}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ₹{customer.productPrices.product1}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ₹{customer.productPrices.product2}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ₹{customer.productPrices.product3}
-                    </td>
+                    {products.map((product) => (
+                      <td key={product.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        ₹{customer.productPrices[product.id] || product.defaultPrice || 0}
+                      </td>
+                    ))}
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <span className={customer.outstandingAmount >= 0 ? 'text-red-600' : 'text-green-600'}>
                         ₹{Math.abs(customer.outstandingAmount).toLocaleString()}
