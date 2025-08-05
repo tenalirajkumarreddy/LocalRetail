@@ -12,6 +12,9 @@ export interface CompanySettings {
   address: string;
   phone: string;
   email: string;
+  pdfTemplate?: string; // Base64 encoded PDF template
+  templateFileName?: string; // Original filename of the template
+  templateUploadedAt?: Date; // When the template was uploaded
   updatedAt: Date;
 }
 
@@ -47,6 +50,7 @@ export interface Transaction {
 }
 
 export interface InvoiceItem {
+  id: string;
   productName: string;
   quantity: number;
   price: number;
@@ -65,6 +69,12 @@ export interface Invoice {
   balanceChange: number;
   date: Date;
   status: 'paid' | 'partial' | 'pending';
+  routeId?: string;
+  routeName?: string;
+  sheetId?: string;
+  cashAmount?: number;
+  upiAmount?: number;
+  customerFinalBalance: number;
 }
 
 export interface RouteSheet {

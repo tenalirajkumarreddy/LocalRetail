@@ -185,11 +185,6 @@ export const RouteManagement: React.FC = () => {
           <p className="text-gray-600">
             Manage delivery routes using codes A-Z ({routes.length}/26 routes used)
           </p>
-          {getAvailableRouteLetters().length > 0 && (
-            <p className="text-sm text-gray-500 mt-1">
-              Available codes: {getAvailableRouteLetters().join(', ')}
-            </p>
-          )}
         </div>
         <button
           onClick={() => setShowAddForm(true)}

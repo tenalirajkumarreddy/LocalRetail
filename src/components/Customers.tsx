@@ -8,9 +8,10 @@ import {
   Phone,
   MapPin,
   IndianRupee,
-  Trash2
+  Trash2,
+  Calculator
 } from 'lucide-react';
-import { getCustomers, addCustomer, updateCustomer, deleteCustomer, getCustomerTransactions } from '../utils/supabase-storage';
+import { getCustomers, addCustomer, updateCustomer, deleteCustomer, getCustomerTransactions, addTransaction } from '../utils/supabase-storage';
 import { Customer, Transaction } from '../types';
 
 export const Customers: React.FC = () => {
@@ -20,8 +21,14 @@ export const Customers: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerTransactions, setCustomerTransactions] = useState<Transaction[]>([]);
+  const [paymentCash, setPaymentCash] = useState(0);
+  const [paymentUpi, setPaymentUpi] = useState(0);
+  const [adjustmentAmount, setAdjustmentAmount] = useState(0);
+  const [adjustmentType, setAdjustmentType] = useState<'credit' | 'debit'>('credit');
 
   const [newCustomer, setNewCustomer] = useState({
     name: '',
@@ -170,6 +177,104 @@ export const Customers: React.FC = () => {
     }
   };
 
+  const handlePaymentCollection = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setPaymentCash(0);
+    setPaymentUpi(0);
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentSubmit = async () => {
+    const totalPayment = paymentCash + paymentUpi;
+    
+    if (!selectedCustomer || totalPayment <= 0) {
+      alert('Please enter a valid payment amount greater than 0');
+      return;
+    }
+
+    try {
+      // Create payment transaction
+      await addTransaction({
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.name,
+        type: 'payment',
+        items: [],
+        totalAmount: 0,
+        amountReceived: totalPayment,
+        balanceChange: -totalPayment, // Reduces outstanding amount
+        date: new Date(),
+        invoiceNumber: `PAY-${selectedCustomer.id}-${Date.now()}`
+      });
+
+      // Update customer's outstanding amount
+      const newOutstanding = selectedCustomer.outstandingAmount - totalPayment;
+      await updateCustomer(selectedCustomer.id, { outstandingAmount: newOutstanding });
+
+      // Refresh data
+      await loadCustomers();
+      
+      // Close modal and reset
+      setShowPaymentModal(false);
+      setPaymentCash(0);
+      setPaymentUpi(0);
+      setSelectedCustomer(null);
+      
+      alert(`Payment of ₹${totalPayment.toLocaleString()} (Cash: ₹${paymentCash.toLocaleString()}, UPI: ₹${paymentUpi.toLocaleString()}) received from ${selectedCustomer.name}`);
+    } catch (error) {
+      console.error('Error processing payment:', error);
+      alert('Error processing payment. Please try again.');
+    }
+  };
+
+  const handleBalanceAdjustment = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setAdjustmentAmount(0);
+    setAdjustmentType('credit');
+    setShowAdjustmentModal(true);
+  };
+
+  const handleAdjustmentSubmit = async () => {
+    if (!selectedCustomer || adjustmentAmount <= 0) {
+      alert('Please enter a valid adjustment amount greater than 0');
+      return;
+    }
+
+    try {
+      const balanceChange = adjustmentType === 'credit' ? -adjustmentAmount : adjustmentAmount;
+      
+      // Create adjustment transaction
+      await addTransaction({
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.name,
+        type: 'adjustment',
+        items: [],
+        totalAmount: 0,
+        amountReceived: 0,
+        balanceChange: balanceChange,
+        date: new Date(),
+        invoiceNumber: `ADJ-${adjustmentType.toUpperCase()}-${selectedCustomer.id}-${Date.now()}`
+      });
+
+      // Update customer's outstanding amount
+      const newOutstanding = selectedCustomer.outstandingAmount + balanceChange;
+      await updateCustomer(selectedCustomer.id, { outstandingAmount: newOutstanding });
+
+      // Refresh data
+      await loadCustomers();
+      
+      // Close modal and reset
+      setShowAdjustmentModal(false);
+      setAdjustmentAmount(0);
+      setAdjustmentType('credit');
+      setSelectedCustomer(null);
+      
+      alert(`Balance adjusted: ${adjustmentType === 'credit' ? 'Credit' : 'Debit'} of ₹${adjustmentAmount.toLocaleString()} for ${selectedCustomer.name}`);
+    } catch (error) {
+      console.error('Error processing adjustment:', error);
+      alert('Error processing adjustment. Please try again.');
+    }
+  };
+
   const handleCallCustomer = (phone: string) => {
     window.open(`tel:${phone}`, '_self');
   };
@@ -283,6 +388,20 @@ export const Customers: React.FC = () => {
                           title="Edit Customer"
                         >
                           <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handlePaymentCollection(customer)}
+                          className="text-blue-600 hover:text-blue-800 p-1 rounded transition-colors"
+                          title="Collect Payment"
+                        >
+                          <IndianRupee className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleBalanceAdjustment(customer)}
+                          className="text-orange-600 hover:text-orange-800 p-1 rounded transition-colors"
+                          title="Adjust Balance"
+                        >
+                          <Calculator className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleCallCustomer(customer.phone)}
@@ -710,6 +829,182 @@ export const Customers: React.FC = () => {
                 className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Collection Modal */}
+      {showPaymentModal && selectedCustomer && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Collect Payment from {selectedCustomer.name}
+            </h3>
+            
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-2">
+                  Current Outstanding: <span className="font-semibold text-red-600">
+                    ₹{Math.abs(selectedCustomer.outstandingAmount).toLocaleString()}
+                  </span>
+                </p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Cash Amount
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={paymentCash}
+                    onChange={(e) => setPaymentCash(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Cash amount"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    UPI Amount
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={paymentUpi}
+                    onChange={(e) => setPaymentUpi(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="UPI amount"
+                  />
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 p-3 rounded-md">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Total Payment:</span>
+                  <span className="font-semibold text-blue-600">
+                    ₹{(paymentCash + paymentUpi).toLocaleString()}
+                  </span>
+                </div>
+                {(paymentCash + paymentUpi) > 0 && (
+                  <div className="flex justify-between text-sm mt-1">
+                    <span className="text-gray-600">Outstanding after payment:</span>
+                    <span className="font-semibold">
+                      ₹{Math.abs(selectedCustomer.outstandingAmount - (paymentCash + paymentUpi)).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowPaymentModal(false);
+                  setPaymentCash(0);
+                  setPaymentUpi(0);
+                  setSelectedCustomer(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePaymentSubmit}
+                disabled={(paymentCash + paymentUpi) <= 0}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              >
+                Collect Payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Balance Adjustment Modal */}
+      {showAdjustmentModal && selectedCustomer && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Adjust Balance for {selectedCustomer.name}
+            </h3>
+            
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-2">
+                  Current Outstanding: <span className="font-semibold text-red-600">
+                    ₹{Math.abs(selectedCustomer.outstandingAmount).toLocaleString()}
+                  </span>
+                </p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Adjustment Type *
+                </label>
+                <select
+                  value={adjustmentType}
+                  onChange={(e) => setAdjustmentType(e.target.value as 'credit' | 'debit')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="credit">Credit (Reduce Outstanding)</option>
+                  <option value="debit">Debit (Increase Outstanding)</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Adjustment Amount *
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={adjustmentAmount}
+                  onChange={(e) => setAdjustmentAmount(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter adjustment amount"
+                  autoFocus
+                />
+              </div>
+              
+              <div className="text-sm text-gray-600">
+                {adjustmentAmount > 0 && (
+                  <p>
+                    Outstanding after adjustment: <span className="font-semibold">
+                      ₹{Math.abs(
+                        selectedCustomer.outstandingAmount + 
+                        (adjustmentType === 'credit' ? -adjustmentAmount : adjustmentAmount)
+                      ).toLocaleString()}
+                    </span>
+                  </p>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowAdjustmentModal(false);
+                  setAdjustmentAmount(0);
+                  setAdjustmentType('credit');
+                  setSelectedCustomer(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAdjustmentSubmit}
+                disabled={adjustmentAmount <= 0}
+                className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              >
+                Apply Adjustment
               </button>
             </div>
           </div>

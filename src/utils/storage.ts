@@ -83,15 +83,27 @@ export const deleteProduct = (id: string): void => {
 // Company settings management
 export const getCompanySettings = (): CompanySettings => {
   const data = localStorage.getItem(STORAGE_KEYS.COMPANY_SETTINGS);
-  return data ? { 
-    ...JSON.parse(data), 
-    updatedAt: new Date(JSON.parse(data).updatedAt) 
-  } : {
+  if (data) {
+    const parsed = JSON.parse(data);
+    return { 
+      ...parsed, 
+      updatedAt: new Date(parsed.updatedAt),
+      // Ensure template fields are preserved
+      pdfTemplate: parsed.pdfTemplate || undefined,
+      templateFileName: parsed.templateFileName || undefined,
+      templateUploadedAt: parsed.templateUploadedAt ? new Date(parsed.templateUploadedAt) : undefined
+    };
+  }
+  
+  return {
     companyName: '',
     address: '',
     phone: '',
     email: '',
-    updatedAt: new Date()
+    updatedAt: new Date(),
+    pdfTemplate: undefined,
+    templateFileName: undefined,
+    templateUploadedAt: undefined
   };
 };
 

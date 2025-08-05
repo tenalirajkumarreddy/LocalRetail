@@ -7,11 +7,24 @@ A comprehensive sales management system designed for local retail businesses, di
 - **Customer Management**: Route-based customer organization with custom pricing
 - **Invoice Generation**: Multi-item invoices with automatic calculations
 - **Product Catalog**: Flexible product management with customer-specific pricing
-- **Route Sheets**: PDF generation for field agents
+- **Route Sheets**: PDF generation for field agents with unique ID format (ROUTE-YYYYMMDD-ROUTECODE)
 - **Route Management**: Organize delivery routes by areas and pincodes
 - **Transaction Tracking**: Complete sales, payment, and adjustment history
 - **Dashboard Analytics**: Business overview and key metrics
 - **Responsive Design**: Works on desktop, tablet, and mobile devices with hamburger menu
+
+## Sheet ID Format
+
+Route sheets use a unique identifier format: `ROUTE-<DATE>-<ROUTECODE>`
+
+Examples:
+- `ROUTE-20250105-A` - Route A sheet created on January 5, 2025
+- `ROUTE-20250105-B` - Route B sheet created on January 5, 2025
+
+This ensures:
+- One sheet per route per day
+- Easy identification and sorting
+- Prevents duplicate sheets for the same route/date combination
 
 ## Tech Stack
 

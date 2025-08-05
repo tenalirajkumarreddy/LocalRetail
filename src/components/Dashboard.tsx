@@ -11,7 +11,7 @@ import {
   Box,
   Settings
 } from 'lucide-react';
-import { getCustomers, getInvoices, getTransactions, getRoutes } from '../utils/supabase-storage';
+import { useData } from '../contexts/DataContext';
 import { Customer, Invoice, Transaction } from '../types';
 
 interface DashboardProps {
@@ -19,11 +19,12 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ onPageChange }) => {
+  const { state } = useData();
+  
   // Simple connection test function
   const testConnection = async () => {
     try {
-      // Test by trying to get customers (this will test the storage connection)
-      await getCustomers();
+      // Test by checking if we have any data in the context
       return {
         isConfigured: true,
         connectionStatus: 'success' as const,
@@ -57,7 +58,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onPageChange }) => {
   });
 
   useEffect(() => {
-    const loadData = async () => {
+    const updateStats = () => {
       try {
         const testDbConnection = async () => {
           const result = await testConnection();
@@ -66,14 +67,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onPageChange }) => {
         
         testDbConnection();
         
-        const customers = await getCustomers();
-        const invoices = await getInvoices();
-        const transactions = await getTransactions();
-        const routes = await getRoutes();
+        const customers = state.customers;
+        const invoices = state.invoices;
+        const transactions = state.transactions;
+        const routes = state.routes;
 
-        const totalOutstanding = customers.reduce((sum, customer) => sum + customer.outstandingAmount, 0);
+        const totalOutstanding = customers.reduce((sum: number, customer: Customer) => sum + customer.outstandingAmount, 0);
         const recentTransactions = transactions
-          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          .sort((a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime())
           .slice(0, 5);
 
         setStats({
@@ -84,12 +85,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onPageChange }) => {
           recentTransactions
         });
       } catch (error) {
-        console.error('Error loading dashboard data:', error);
+        console.error('Error updating dashboard stats:', error);
       }
     };
     
-    loadData();
-  }, []);
+    updateStats();
+  }, [state.customers, state.invoices, state.transactions, state.routes]); // Dependencies on the actual data
 
   const statCards = [
     {

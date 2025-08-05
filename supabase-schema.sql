@@ -50,6 +50,12 @@ CREATE TABLE invoices (
   amount_received DECIMAL(10,2) NOT NULL DEFAULT 0,
   balance_change DECIMAL(10,2) NOT NULL DEFAULT 0,
   status TEXT CHECK (status IN ('paid', 'partial', 'pending')) DEFAULT 'pending',
+  route_id TEXT,
+  route_name TEXT,
+  sheet_id TEXT,
+  cash_amount DECIMAL(10,2) DEFAULT 0,
+  upi_amount DECIMAL(10,2) DEFAULT 0,
+  customer_final_balance DECIMAL(10,2) DEFAULT 0,
   date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -72,13 +78,13 @@ CREATE TABLE transactions (
 
 -- Route Sheets Table (for tracking printed/digital route sheets)
 CREATE TABLE route_sheets (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  id TEXT PRIMARY KEY,
   route_id TEXT NOT NULL,
   route_name TEXT NOT NULL,
   customers JSONB NOT NULL DEFAULT '[]', -- Array of customer objects with their data
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed')),
   delivery_data JSONB NOT NULL DEFAULT '{}', -- Object with customer delivery quantities and amounts
-  amount_received JSONB NOT NULL DEFAULT '{}', -- Object with customer payment amounts
+  amount_received JSONB NOT NULL DEFAULT '{}', -- Object with customer payment amounts - supports {customerId: {cash: number, upi: number, total: number}} format
   notes TEXT DEFAULT '',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

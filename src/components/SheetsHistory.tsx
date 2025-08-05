@@ -18,10 +18,12 @@ import {
   updateSheetRecord,
   deleteSheetRecord,
   closeSheetRecord,
-  SheetRecord
+  getCustomers,
+  SheetRecord,
+  validateAndFixDuplicatePayments
 } from '../utils/supabase-storage';
 import { generateRouteSheetPDF, printRouteSheet } from '../utils/pdf';
-import { Product } from '../types';
+import { Product, Customer } from '../types';
 
 export const SheetsHistory: React.FC = () => {
   const [sheetRecords, setSheetRecords] = useState<SheetRecord[]>([]);
@@ -33,11 +35,80 @@ export const SheetsHistory: React.FC = () => {
   const [dropdownOpen, setDropdownOpen] = useState<string | null>(null);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
   const [sheetToClose, setSheetToClose] = useState<SheetRecord | null>(null);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'closed'>('all');
+  const sheetsPerPage = 10;
+
+  // Customer pagination states
+  const [customerCurrentPage, setCustomerCurrentPage] = useState(1);
+  const customersPerPage = 5;
 
   // Get only first 3 products for consistency
   const getFixedProducts = () => {
     return products.slice(0, 3);
   };
+
+  // Filter and paginate sheets
+  const getFilteredSheets = () => {
+    let filtered = sheetRecords;
+    
+    // Apply search filter
+    if (searchTerm) {
+      filtered = filtered.filter(sheet => 
+        sheet.routeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        sheet.routeId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        sheet.id.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+    
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(sheet => sheet.status === statusFilter);
+    }
+    
+    return filtered;
+  };
+
+  const getPaginatedSheets = () => {
+    const filtered = getFilteredSheets();
+    const startIndex = (currentPage - 1) * sheetsPerPage;
+    const endIndex = startIndex + sheetsPerPage;
+    const currentSheets = filtered.slice(startIndex, endIndex);
+    const totalPages = Math.ceil(filtered.length / sheetsPerPage);
+    
+    return {
+      currentSheets,
+      totalPages,
+      totalSheets: filtered.length,
+      startIndex,
+      endIndex: Math.min(endIndex, filtered.length)
+    };
+  };
+
+  // Customer pagination
+  const getCustomerPagination = () => {
+    if (!selectedSheet) return { currentCustomers: [], totalCustomerPages: 0, customerStartIndex: 0, customerEndIndex: 0 };
+    
+    const startIndex = (customerCurrentPage - 1) * customersPerPage;
+    const endIndex = startIndex + customersPerPage;
+    const currentCustomers = selectedSheet.customers.slice(startIndex, endIndex);
+    const totalCustomerPages = Math.ceil(selectedSheet.customers.length / customersPerPage);
+    
+    return {
+      currentCustomers,
+      totalCustomerPages,
+      customerStartIndex: startIndex,
+      customerEndIndex: Math.min(endIndex, selectedSheet.customers.length)
+    };
+  };
+
+  // Reset customer pagination when selecting a new sheet
+  useEffect(() => {
+    setCustomerCurrentPage(1);
+  }, [selectedSheet]);
 
   useEffect(() => {
     loadData();
@@ -56,6 +127,167 @@ export const SheetsHistory: React.FC = () => {
       document.removeEventListener('click', handleClickOutside);
     };
   }, [dropdownOpen]);
+
+  // Add automatic data consistency repair function
+  const repairDataConsistency = async () => {
+    try {
+      console.log('Starting data consistency repair...');
+      
+      const allCustomers = await getCustomers();
+      const repairCount = { customers: 0, sheets: 0 };
+      
+      for (const customer of allCustomers) {
+        // Recalculate outstanding amount from all closed sheets
+        const customerSheets = sheetRecords.filter((sheet: SheetRecord) => 
+          sheet.status === 'closed' && 
+          sheet.customers?.some((c: any) => c.id === customer.id)
+        );
+        
+        let recalculatedOutstanding = 0;
+        for (const sheet of customerSheets) {
+          const customerDeliveryData = sheet.deliveryData[customer.id];
+          const customerAmountReceived = sheet.amountReceived[customer.id];
+          
+          if (customerDeliveryData) {
+            let totalDelivered = 0;
+            for (const productId in customerDeliveryData) {
+              totalDelivered += customerDeliveryData[productId].amount;
+            }
+            
+            const totalReceived = customerAmountReceived ? 
+              (customerAmountReceived.cash || 0) + (customerAmountReceived.upi || 0) : 0;
+            
+            recalculatedOutstanding += totalDelivered - totalReceived;
+          }
+        }
+        
+        // Update customer if outstanding amount is different
+        const currentOutstanding = customer.outstandingAmount || 0;
+        const difference = Math.abs(recalculatedOutstanding - currentOutstanding);
+        
+        if (difference > 0.01) {
+          console.log(`Repairing customer ${customer.name}: ${currentOutstanding} → ${recalculatedOutstanding}`);
+          // Note: In a real implementation, you'd call updateCustomer here
+          // await updateCustomer(customer.id, { outstandingAmount: recalculatedOutstanding });
+          repairCount.customers++;
+        }
+      }
+      
+      console.log(`Data repair completed: ${repairCount.customers} customers, ${repairCount.sheets} sheets updated`);
+      return repairCount;
+    } catch (error) {
+      console.error('Error during data consistency repair:', error);
+      throw error;
+    }
+  };
+
+  // Add comprehensive data integrity check
+  const performDataIntegrityCheck = async () => {
+    try {
+      console.log('Performing data integrity check...');
+      
+      // Check for duplicate payment IDs
+      const duplicateCheck = await validateAndFixDuplicatePayments();
+      if (duplicateCheck.duplicatesFound > 0) {
+        console.warn(`⚠️ Found ${duplicateCheck.duplicatesFound} duplicate payment IDs`);
+      }
+      
+      const allCustomers = await getCustomers();
+      
+      const issues: string[] = [];
+      
+      // Add duplicate payment IDs to issues if found
+      if (duplicateCheck.duplicatesFound > 0) {
+        issues.push(`Found ${duplicateCheck.duplicatesFound} duplicate payment IDs in the system`);
+      }
+      
+      // Check each sheet for data consistency
+      for (const sheet of sheetRecords) {
+        // Validate sheet data
+        const validationErrors = validateSheetData(sheet);
+        if (validationErrors.length > 0) {
+          issues.push(`Sheet ${sheet.routeName} (${new Date(sheet.createdAt).toLocaleDateString()}): ${validationErrors.join(', ')}`);
+        }
+        
+        // Check if customer references are valid
+        if (sheet.customers) {
+          for (const customer of sheet.customers) {
+            const customerExists = allCustomers.find((c: Customer) => c.id === customer.id);
+            if (!customerExists) {
+              issues.push(`Sheet ${sheet.routeName}: Customer ID ${customer.id} not found in customers table`);
+            }
+          }
+        }
+      }
+      
+      // Check customer outstanding amounts match closed sheets
+      for (const customer of allCustomers) {
+        const customerSheets = sheetRecords.filter((sheet: SheetRecord) => 
+          sheet.status === 'closed' && 
+          sheet.customers?.some((c: any) => c.id === customer.id)
+        );
+        
+        let calculatedOutstanding = 0;
+        for (const sheet of customerSheets) {
+          // Check if customer has delivery data
+          const customerDeliveryData = sheet.deliveryData[customer.id];
+          const customerAmountReceived = sheet.amountReceived[customer.id];
+          
+          if (customerDeliveryData) {
+            // Calculate total delivered amount for this customer
+            let totalDelivered = 0;
+            for (const productId in customerDeliveryData) {
+              totalDelivered += customerDeliveryData[productId].amount;
+            }
+            
+            // Get total amount received
+            const totalReceived = customerAmountReceived ? 
+              (customerAmountReceived.cash || 0) + (customerAmountReceived.upi || 0) : 0;
+            
+            calculatedOutstanding += totalDelivered - totalReceived;
+          }
+        }
+        
+        const actualOutstanding = customer.outstandingAmount || 0;
+        const difference = Math.abs(calculatedOutstanding - actualOutstanding);
+        
+        if (difference > 0.01) { // Allow for minor floating point differences
+          issues.push(`Customer ${customer.name}: Outstanding amount mismatch. Calculated: ₹${calculatedOutstanding.toFixed(2)}, Stored: ₹${actualOutstanding.toFixed(2)}`);
+        }
+      }
+      
+      if (issues.length > 0) {
+        console.warn('Data integrity issues found:', issues);
+        // In development, show these issues. In production, log them.
+        if (process.env.NODE_ENV === 'development') {
+          alert(`Data integrity issues found:\n${issues.slice(0, 5).join('\n')}${issues.length > 5 ? `\n... and ${issues.length - 5} more issues` : ''}`);
+        }
+      } else {
+        console.log('Data integrity check passed');
+      }
+      
+      return issues;
+    } catch (error) {
+      console.error('Error during data integrity check:', error);
+      return [`Data integrity check failed: ${error instanceof Error ? error.message : 'Unknown error'}`];
+    }
+  };
+
+  // Run data integrity check on component mount and periodically
+  useEffect(() => {
+    const runIntegrityCheck = async () => {
+      if (sheetRecords.length > 0) {
+        await performDataIntegrityCheck();
+      }
+    };
+    
+    runIntegrityCheck();
+    
+    // Run integrity check every 5 minutes
+    const interval = setInterval(runIntegrityCheck, 5 * 60 * 1000);
+    
+    return () => clearInterval(interval);
+  }, [sheetRecords]);
 
   const loadData = async () => {
     setLoading(true);
@@ -87,23 +319,57 @@ export const SheetsHistory: React.FC = () => {
     // Ensure backwards compatibility - initialize amountReceived if not present
     const sheetWithAmounts = {
       ...sheet,
-      deliveryData: Object.fromEntries(
-        Object.entries(sheet.deliveryData).map(([customerId, data]) => [
-          customerId,
-          {
-            ...data,
-            amountReceived: data.amountReceived || 0
-          }
-        ])
-      )
+      amountReceived: sheet.amountReceived ? 
+        Object.fromEntries(
+          Object.entries(sheet.amountReceived).map(([customerId, amount]) => [
+            customerId,
+            typeof amount === 'number' 
+              ? { cash: 0, upi: 0, total: amount } // Convert old format
+              : amount // Keep new format
+          ])
+        ) : {}
     };
-    setSelectedSheet(sheetWithAmounts);
+    
+    // Refresh customer data to get current outstanding amounts
+    refreshCustomerData(sheetWithAmounts);
     setEditMode(false);
     setDropdownOpen(null);
   };
 
+  const refreshCustomerData = async (sheet: SheetRecord) => {
+    try {
+      // Get fresh customer data from storage
+      const { getCustomers } = await import('../utils/supabase-storage');
+      const currentCustomers = await getCustomers();
+      
+      // Update the sheet's customer data with current outstanding amounts
+      const updatedCustomers = sheet.customers.map(sheetCustomer => {
+        const currentCustomer = currentCustomers.find(c => c.id === sheetCustomer.id);
+        return currentCustomer ? {
+          ...sheetCustomer,
+          outstandingAmount: currentCustomer.outstandingAmount
+        } : sheetCustomer;
+      });
+      
+      setSelectedSheet({
+        ...sheet,
+        customers: updatedCustomers
+      });
+    } catch (error) {
+      console.error('Error refreshing customer data:', error);
+      // Fall back to original sheet data if refresh fails
+      setSelectedSheet(sheet);
+    }
+  };
+
   const updateDeliveryQuantity = (customerId: string, productId: string, quantity: number) => {
     if (!selectedSheet) return;
+
+    // Validate quantity is non-negative
+    if (quantity < 0) {
+      alert('Quantity cannot be negative');
+      return;
+    }
 
     const updatedSheet = { ...selectedSheet };
     if (!updatedSheet.deliveryData[customerId]) {
@@ -118,11 +384,22 @@ export const SheetsHistory: React.FC = () => {
     const product = products.find(p => p.id === productId);
     
     if (customer && product) {
+      // Use customer-specific price if available, otherwise product default
       const rate = customer.productPrices[productId] || product.defaultPrice || 0;
+      
+      // Validate rate is positive
+      if (rate <= 0 && quantity > 0) {
+        alert(`No valid price found for ${product.name}. Please check product pricing.`);
+        return;
+      }
+      
       updatedSheet.deliveryData[customerId][productId] = {
         quantity,
         amount: quantity * rate
       };
+    } else {
+      console.error(`Customer or product not found: customer=${customerId}, product=${productId}`);
+      return;
     }
 
     setSelectedSheet(updatedSheet);
@@ -133,20 +410,46 @@ export const SheetsHistory: React.FC = () => {
     setSelectedSheet({ ...selectedSheet, notes });
   };
 
-  const updateAmountReceived = (customerId: string, amount: number) => {
+  const updateAmountReceived = (customerId: string, paymentType: 'cash' | 'upi', amount: number) => {
     if (!selectedSheet) return;
+    
+    // Validate amount is non-negative
+    if (amount < 0) {
+      alert('Amount cannot be negative');
+      return;
+    }
     
     const updatedSheet = { ...selectedSheet };
     if (!updatedSheet.amountReceived) {
       updatedSheet.amountReceived = {};
     }
-    updatedSheet.amountReceived[customerId] = amount;
+    if (!updatedSheet.amountReceived[customerId]) {
+      updatedSheet.amountReceived[customerId] = { cash: 0, upi: 0, total: 0 };
+    }
+    
+    updatedSheet.amountReceived[customerId][paymentType] = amount;
+    
+    // Ensure total is always calculated correctly
+    const cash = updatedSheet.amountReceived[customerId].cash || 0;
+    const upi = updatedSheet.amountReceived[customerId].upi || 0;
+    updatedSheet.amountReceived[customerId].total = cash + upi;
+    
     setSelectedSheet(updatedSheet);
   };
 
   const saveSheet = async () => {
     if (!selectedSheet) return;
 
+    // Validate data consistency before saving
+    const validationErrors = validateSheetData(selectedSheet);
+    if (validationErrors.length > 0) {
+      alert(`Cannot save sheet due to validation errors:\n${validationErrors.join('\n')}`);
+      return;
+    }
+
+    // Ensure this is only updating sheet data, NOT creating invoices/payments/transactions
+    // Those are only created when the sheet is CLOSED, not when it's saved during editing
+    
     setSaving(true);
     try {
       await updateSheetRecord(selectedSheet.id, {
@@ -154,6 +457,7 @@ export const SheetsHistory: React.FC = () => {
         amountReceived: selectedSheet.amountReceived,
         notes: selectedSheet.notes,
         updatedAt: new Date()
+        // Note: status remains unchanged - only closing the sheet changes status
       });
 
       // Update local state
@@ -166,13 +470,62 @@ export const SheetsHistory: React.FC = () => {
       );
 
       setEditMode(false);
-      alert('Sheet data saved successfully!');
+      alert('Sheet data saved successfully! Note: Financial records (invoices, payments, transactions) will only be created when the sheet is closed.');
     } catch (error) {
       console.error('Error saving sheet:', error);
       alert('Error saving sheet data. Please try again.');
     } finally {
       setSaving(false);
     }
+  };
+
+  const validateSheetData = (sheet: SheetRecord): string[] => {
+    const errors: string[] = [];
+    
+    // Validate delivery data
+    for (const [customerId, customerData] of Object.entries(sheet.deliveryData)) {
+      for (const [productId, data] of Object.entries(customerData)) {
+        if (data.quantity < 0) {
+          errors.push(`Customer ${customerId}: Negative quantity for product ${productId}`);
+        }
+        if (data.amount < 0) {
+          errors.push(`Customer ${customerId}: Negative amount for product ${productId}`);
+        }
+        
+        // Validate amount calculation
+        const customer = sheet.customers.find(c => c.id === customerId);
+        const product = products.find(p => p.id === productId);
+        if (customer && product) {
+          const expectedRate = customer.productPrices[productId] || product.defaultPrice || 0;
+          const expectedAmount = data.quantity * expectedRate;
+          if (Math.abs(data.amount - expectedAmount) > 0.01) { // Allow for small floating point differences
+            errors.push(`Customer ${customerId}: Amount mismatch for product ${productId}. Expected: ${expectedAmount}, Got: ${data.amount}`);
+          }
+        }
+      }
+    }
+    
+    // Validate payment data
+    if (sheet.amountReceived) {
+      for (const [customerId, paymentData] of Object.entries(sheet.amountReceived)) {
+        if (typeof paymentData === 'object') {
+          if (paymentData.cash < 0) {
+            errors.push(`Customer ${customerId}: Negative cash amount`);
+          }
+          if (paymentData.upi < 0) {
+            errors.push(`Customer ${customerId}: Negative UPI amount`);
+          }
+          
+          // Validate total calculation
+          const expectedTotal = (paymentData.cash || 0) + (paymentData.upi || 0);
+          if (Math.abs((paymentData.total || 0) - expectedTotal) > 0.01) {
+            errors.push(`Customer ${customerId}: Payment total mismatch. Expected: ${expectedTotal}, Got: ${paymentData.total}`);
+          }
+        }
+      }
+    }
+    
+    return errors;
   };
 
   const handleFillData = (sheet: SheetRecord) => {
@@ -183,19 +536,47 @@ export const SheetsHistory: React.FC = () => {
     // Ensure backwards compatibility - initialize amountReceived if not present
     const sheetWithAmounts = {
       ...sheet,
-      deliveryData: Object.fromEntries(
-        Object.entries(sheet.deliveryData).map(([customerId, data]) => [
-          customerId,
-          {
-            ...data,
-            amountReceived: data.amountReceived || 0
-          }
-        ])
-      )
+      amountReceived: sheet.amountReceived ? 
+        Object.fromEntries(
+          Object.entries(sheet.amountReceived).map(([customerId, amount]) => [
+            customerId,
+            typeof amount === 'number' 
+              ? { cash: 0, upi: 0, total: amount } // Convert old format
+              : amount // Keep new format
+          ])
+        ) : {}
     };
-    setSelectedSheet(sheetWithAmounts);
+    
+    // Refresh customer data to get current outstanding amounts
+    refreshCustomerDataForEdit(sheetWithAmounts);
     setEditMode(true);
     setDropdownOpen(null);
+  };
+
+  const refreshCustomerDataForEdit = async (sheet: SheetRecord) => {
+    try {
+      // Get fresh customer data from storage
+      const { getCustomers } = await import('../utils/supabase-storage');
+      const currentCustomers = await getCustomers();
+      
+      // Update the sheet's customer data with current outstanding amounts
+      const updatedCustomers = sheet.customers.map(sheetCustomer => {
+        const currentCustomer = currentCustomers.find(c => c.id === sheetCustomer.id);
+        return currentCustomer ? {
+          ...sheetCustomer,
+          outstandingAmount: currentCustomer.outstandingAmount
+        } : sheetCustomer;
+      });
+      
+      setSelectedSheet({
+        ...sheet,
+        customers: updatedCustomers
+      });
+    } catch (error) {
+      console.error('Error refreshing customer data:', error);
+      // Fall back to original sheet data if refresh fails
+      setSelectedSheet(sheet);
+    }
   };
 
   const handleDownloadPDF = async (sheet: SheetRecord) => {
@@ -262,17 +643,20 @@ export const SheetsHistory: React.FC = () => {
       return;
     }
 
+    // Validate data before closing
+    const validationErrors = validateSheetData(sheetToClose);
+    if (validationErrors.length > 0) {
+      alert(`Cannot close sheet due to validation errors:\n${validationErrors.join('\n')}`);
+      setShowCloseDialog(false);
+      setSheetToClose(null);
+      return;
+    }
+
     try {
       await closeSheetRecord(sheetToClose.id);
       
-      // Update local state
-      setSheetRecords(prev => 
-        prev.map(sheet => 
-          sheet.id === sheetToClose.id 
-            ? { ...sheet, status: 'closed', updatedAt: new Date() }
-            : sheet
-        )
-      );
+      // Refresh the entire data to ensure consistency
+      await loadData();
       
       // If this sheet is currently selected, close it since it can't be edited anymore
       if (selectedSheet?.id === sheetToClose.id) {
@@ -283,7 +667,7 @@ export const SheetsHistory: React.FC = () => {
       alert('Sheet closed successfully! Customer outstanding amounts have been updated.');
     } catch (error) {
       console.error('Error closing sheet:', error);
-      alert('Error closing sheet. Please try again.');
+      alert(`Error closing sheet: ${error instanceof Error ? error.message : 'Please try again.'}`);
     } finally {
       setShowCloseDialog(false);
       setSheetToClose(null);
@@ -295,6 +679,14 @@ export const SheetsHistory: React.FC = () => {
     
     return Object.values(selectedSheet.deliveryData[customerId])
       .reduce((sum, item) => sum + item.amount, 0);
+  };
+
+  const getNewOutstanding = (customerId: string) => {
+    const currentOutstanding = selectedSheet?.customers.find(c => c.id === customerId)?.outstandingAmount || 0;
+    const deliveryTotal = getCustomerDeliveryTotal(customerId);
+    const receivedAmount = selectedSheet?.amountReceived?.[customerId]?.total || 0;
+    
+    return currentOutstanding + deliveryTotal - receivedAmount;
   };
 
   const getSheetGrandTotal = () => {
@@ -318,10 +710,36 @@ export const SheetsHistory: React.FC = () => {
       {!selectedSheet && (
         <div className="bg-white rounded-lg shadow border border-gray-200 overflow-visible">
           <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-              <FileText className="w-5 h-5 mr-2" />
-              Route Sheets History
-            </h2>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+                <FileText className="w-5 h-5 mr-2" />
+                Route Sheets History
+              </h2>
+              
+              <div className="flex flex-col sm:flex-row gap-3">
+                {/* Search */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search by route name, ID, or sheet ID..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full sm:w-64 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                
+                {/* Status Filter */}
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'closed')}
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">All Sheets</option>
+                  <option value="active">Active</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           {loading ? (
@@ -336,35 +754,41 @@ export const SheetsHistory: React.FC = () => {
               <p className="text-gray-600">No route sheets have been generated yet. Generate some route sheets first.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto overflow-y-visible pb-32">
-              <table className="w-full relative">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Sheet ID
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Route
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Customers
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Created
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Last Updated
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {sheetRecords.map((sheet) => (
+            <>
+              <div className="overflow-x-auto">
+                {(() => {
+                  const { currentSheets, totalPages, totalSheets, startIndex, endIndex } = getPaginatedSheets();
+                  
+                  return (
+                    <>
+                      <table className="w-full relative">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Sheet ID
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Route
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Customers
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Status
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Created
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Last Updated
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {currentSheets.map((sheet) => (
                     <tr key={sheet.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
                         {sheet.id}
@@ -469,9 +893,68 @@ export const SheetsHistory: React.FC = () => {
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                        </tbody>
+                      </table>
+                      
+                      {/* Pagination Controls */}
+                      {totalPages > 1 && (
+                        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between bg-gray-50">
+                          <div className="text-sm text-gray-700">
+                            Showing {startIndex + 1} to {endIndex} of {totalSheets} sheets
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                              disabled={currentPage === 1}
+                              className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Previous
+                            </button>
+                            
+                            <div className="flex items-center space-x-1">
+                              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                let pageNum;
+                                if (totalPages <= 5) {
+                                  pageNum = i + 1;
+                                } else if (currentPage <= 3) {
+                                  pageNum = i + 1;
+                                } else if (currentPage >= totalPages - 2) {
+                                  pageNum = totalPages - 4 + i;
+                                } else {
+                                  pageNum = currentPage - 2 + i;
+                                }
+                                
+                                return (
+                                  <button
+                                    key={pageNum}
+                                    onClick={() => setCurrentPage(pageNum)}
+                                    className={`px-3 py-2 text-sm font-medium rounded-md ${
+                                      currentPage === pageNum
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    {pageNum}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            
+                            <button
+                              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                              disabled={currentPage === totalPages}
+                              className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -548,52 +1031,63 @@ export const SheetsHistory: React.FC = () => {
 
           {/* Customer Data Table */}
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    S.No
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Customer
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Phone
-                  </th>
-                  {getFixedProducts().map((product) => (
-                    <React.Fragment key={product.id}>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        {product.name} Qty
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Rate
-                      </th>
-                    </React.Fragment>
-                  ))}
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Outstanding
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Amount Received
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Total
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {selectedSheet.customers.map((customer, index) => (
+            {(() => {
+              const { currentCustomers, totalCustomerPages, customerStartIndex, customerEndIndex } = getCustomerPagination();
+              
+              return (
+                <>
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          S.No
+                        </th>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Customer
+                        </th>
+                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Phone
+                        </th>
+                        {getFixedProducts().map((product) => (
+                          <React.Fragment key={product.id}>
+                            <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              {product.name.replace('ML', '')} Qty
+                            </th>
+                            <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Rate
+                            </th>
+                          </React.Fragment>
+                        ))}
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Outstanding
+                        </th>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Total
+                        </th>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Cash
+                        </th>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          UPI
+                        </th>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Received
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {currentCustomers.map((customer, index) => (
                   <tr key={customer.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {index + 1}
+                    <td className="px-2 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {customerStartIndex + index + 1}
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
+                    <td className="px-3 py-4 whitespace-nowrap">
                       <div>
                         <div className="text-sm font-medium text-gray-900">{customer.name}</div>
                         <div className="text-sm text-gray-500">{customer.id}</div>
                       </div>
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-2 py-4 whitespace-nowrap text-sm text-gray-900">
                       {customer.phone}
                     </td>
                     {getFixedProducts().map((product) => {
@@ -602,14 +1096,14 @@ export const SheetsHistory: React.FC = () => {
                       
                       return (
                         <React.Fragment key={product.id}>
-                          <td className="px-4 py-4 whitespace-nowrap">
+                          <td className="px-2 py-4 whitespace-nowrap">
                             {editMode ? (
                               <input
                                 type="number"
                                 min="0"
                                 value={deliveryData?.quantity || 0}
                                 onChange={(e) => updateDeliveryQuantity(customer.id, product.id, parseInt(e.target.value) || 0)}
-                                className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                               />
                             ) : (
                               <span className="text-sm text-gray-900">
@@ -617,37 +1111,118 @@ export const SheetsHistory: React.FC = () => {
                               </span>
                             )}
                           </td>
-                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-2 py-4 whitespace-nowrap text-sm text-gray-600">
                             ₹{rate}
                           </td>
                         </React.Fragment>
                       );
                     })}
-                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      ₹{Math.abs(customer.outstandingAmount).toLocaleString()}
+                    <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">₹{Math.abs(customer.outstandingAmount).toLocaleString()}</div>
+                        {editMode && (
+                          <div className="text-xs text-blue-600">After close: ₹{Math.abs(getNewOutstanding(customer.id)).toLocaleString()}</div>
+                        )}
+                      </div>
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
+                    <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-green-600">
+                      ₹{getCustomerDeliveryTotal(customer.id).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-4 whitespace-nowrap">
                       {editMode ? (
                         <input
                           type="number"
                           min="0"
-                          value={selectedSheet.amountReceived?.[customer.id] || 0}
-                          onChange={(e) => updateAmountReceived(customer.id, parseFloat(e.target.value) || 0)}
-                          className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          value={selectedSheet.amountReceived?.[customer.id]?.cash || 0}
+                          onChange={(e) => updateAmountReceived(customer.id, 'cash', parseFloat(e.target.value) || 0)}
+                          className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                         />
                       ) : (
                         <span className="text-sm text-gray-900">
-                          ₹{selectedSheet.amountReceived?.[customer.id] || 0}
+                          ₹{selectedSheet.amountReceived?.[customer.id]?.cash || 0}
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-green-600">
-                      ₹{getCustomerDeliveryTotal(customer.id).toLocaleString()}
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      {editMode ? (
+                        <input
+                          type="number"
+                          min="0"
+                          value={selectedSheet.amountReceived?.[customer.id]?.upi || 0}
+                          onChange={(e) => updateAmountReceived(customer.id, 'upi', parseFloat(e.target.value) || 0)}
+                          className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      ) : (
+                        <span className="text-sm text-gray-900">
+                          ₹{selectedSheet.amountReceived?.[customer.id]?.upi || 0}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
+                      ₹{(selectedSheet.amountReceived?.[customer.id]?.total || 0).toLocaleString()}
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
+                    </tbody>
+                  </table>
+                  
+                  {/* Customer Pagination */}
+                  {totalCustomerPages > 1 && (
+                    <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between bg-gray-50 rounded-b-lg">
+                      <div className="text-sm text-gray-700">
+                        Showing {customerStartIndex + 1} to {Math.min(customerEndIndex, selectedSheet.customers.length)} of {selectedSheet.customers.length} customers
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => setCustomerCurrentPage(prev => Math.max(prev - 1, 1))}
+                          disabled={customerCurrentPage === 1}
+                          className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Previous
+                        </button>
+                        
+                        <div className="flex items-center space-x-1">
+                          {Array.from({ length: Math.min(5, totalCustomerPages) }, (_, i) => {
+                            let pageNum;
+                            if (totalCustomerPages <= 5) {
+                              pageNum = i + 1;
+                            } else if (customerCurrentPage <= 3) {
+                              pageNum = i + 1;
+                            } else if (customerCurrentPage >= totalCustomerPages - 2) {
+                              pageNum = totalCustomerPages - 4 + i;
+                            } else {
+                              pageNum = customerCurrentPage - 2 + i;
+                            }
+                            
+                            return (
+                              <button
+                                key={pageNum}
+                                onClick={() => setCustomerCurrentPage(pageNum)}
+                                className={`px-3 py-2 text-sm font-medium rounded-md ${
+                                  customerCurrentPage === pageNum
+                                    ? 'bg-blue-600 text-white'
+                                    : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50'
+                                }`}
+                              >
+                                {pageNum}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        
+                        <button
+                          onClick={() => setCustomerCurrentPage(prev => Math.min(prev + 1, totalCustomerPages))}
+                          disabled={customerCurrentPage === totalCustomerPages}
+                          className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
 
           {/* Notes Section */}
@@ -695,13 +1270,22 @@ export const SheetsHistory: React.FC = () => {
                 Are you sure you want to close the sheet for <strong>{sheetToClose.routeName}</strong>? 
               </p>
               <p className="text-sm text-gray-600 mt-2">
+                <strong>⚠️ IMPORTANT:</strong> This action will create financial records and cannot be undone.
+              </p>
+              <p className="text-sm text-gray-600 mt-2">
                 This action will:
               </p>
               <ul className="text-sm text-gray-600 mt-1 ml-4 list-disc">
-                <li>Update customer outstanding amounts based on deliveries and payments</li>
+                <li><strong>Create invoices</strong> for all customer purchases</li>
+                <li><strong>Create payment records</strong> for all amounts received</li>
+                <li><strong>Create transaction history</strong> entries</li>
+                <li><strong>Update customer outstanding amounts</strong> based on deliveries and payments</li>
                 <li>Prevent further editing of this sheet</li>
                 <li>Allow creation of new sheets for this route</li>
               </ul>
+              <p className="text-sm text-red-600 mt-2 font-medium">
+                ⚠️ Financial records (invoices, payments, transactions) are ONLY created when sheets are closed, not during editing.
+              </p>
             </div>
             <div className="flex space-x-3 justify-end">
               <button

@@ -383,7 +383,13 @@ export const getInvoices = async (): Promise<Invoice[]> => {
         amountReceived: parseFloat(i.amount_received) || 0,
         balanceChange: parseFloat(i.balance_change) || 0,
         date: new Date(i.date),
-        status: i.status as 'paid' | 'partial' | 'pending'
+        status: i.status as 'paid' | 'partial' | 'pending',
+        routeId: i.route_id,
+        routeName: i.route_name || 'No route',
+        sheetId: i.sheet_id,
+        cashAmount: parseFloat(i.cash_amount) || 0,
+        upiAmount: parseFloat(i.upi_amount) || 0,
+        customerFinalBalance: parseFloat(i.customer_final_balance) || 0
       }));
     } catch (error) {
       handleError(error, 'get invoices from Supabase');
@@ -526,6 +532,12 @@ export const addInvoice = async (invoice: Omit<Invoice, 'id' | 'invoiceNumber'>)
           amount_received: invoice.amountReceived,
           balance_change: invoice.balanceChange,
           status: invoice.status,
+          route_id: invoice.routeId || null,
+          route_name: invoice.routeName || 'No route',
+          sheet_id: invoice.sheetId || null,
+          cash_amount: invoice.cashAmount || 0,
+          upi_amount: invoice.upiAmount || 0,
+          customer_final_balance: invoice.customerFinalBalance,
           date: invoice.date.toISOString()
         })
         .select()
@@ -767,7 +779,11 @@ export interface SheetRecord {
     };
   };
   amountReceived: {
-    [customerId: string]: number;
+    [customerId: string]: {
+      cash: number;
+      upi: number;
+      total: number;
+    };
   };
   notes: string;
 }
@@ -810,14 +826,33 @@ export const getSheetHistory = async (): Promise<SheetRecord[]> => {
   })) : [];
 };
 
+// Generate unique sheet ID with format: ROUTE-<DATE>-<ROUTECODE>
+export const generateSheetId = (routeId: string, date?: Date): string => {
+  const currentDate = date || new Date();
+  const dateStr = currentDate.toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD format
+  return `ROUTE-${dateStr}-${routeId}`;
+};
+
+// Check if a sheet already exists for a route on a specific date
+export const checkSheetExists = async (routeId: string, date?: Date): Promise<SheetRecord | null> => {
+  const targetSheetId = generateSheetId(routeId, date);
+  const sheets = await getSheetHistory();
+  
+  return sheets.find(sheet => sheet.id === targetSheetId) || null;
+};
+
 export const saveSheetHistory = async (sheetRecord: Omit<SheetRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> => {
   const mode = getStorageMode();
+  
+  // Generate custom sheet ID with format: ROUTE-<DATE>-<ROUTECODE>
+  const customSheetId = generateSheetId(sheetRecord.routeId);
   
   if (mode === 'supabase') {
     try {
       const { data, error } = await supabase
         .from(TABLES.SHEETS)
         .insert({
+          id: customSheetId,
           route_id: sheetRecord.routeId,
           route_name: sheetRecord.routeName,
           customers: sheetRecord.customers,
@@ -841,7 +876,7 @@ export const saveSheetHistory = async (sheetRecord: Omit<SheetRecord, 'id' | 'cr
   const sheets = await getSheetHistory();
   const newSheet: SheetRecord = {
     ...sheetRecord,
-    id: `SHEET-${Date.now()}`,
+    id: customSheetId,
     createdAt: new Date(),
     updatedAt: new Date()
   };
@@ -910,26 +945,116 @@ export const deleteSheetRecord = async (id: string): Promise<void> => {
   localStorage.setItem('sales_app_sheets_history', JSON.stringify(filteredSheets));
 };
 
+// Utility function to generate unique transaction IDs
+export const generateUniqueTransactionId = (type: 'sale' | 'payment', customerId: string, sheetId?: string): string => {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substr(2, 9);
+  
+  if (type === 'sale') {
+    return `SALE-${sheetId || 'MANUAL'}-${customerId}-${timestamp}-${random}`;
+  } else {
+    return `PAY-${sheetId ? 'SHEET' : 'MANUAL'}-${customerId}-${timestamp}-${random}`;
+  }
+};
+
+// Function to check for duplicate payment IDs and fix them
+export const validateAndFixDuplicatePayments = async (): Promise<{ duplicatesFound: number; duplicatesFixed: number }> => {
+  const transactions = await getTransactions();
+  const paymentTransactions = transactions.filter(t => t.type === 'payment');
+  
+  const idCounts = new Map<string, number>();
+  const duplicates: string[] = [];
+  
+  // Count occurrences of each payment ID
+  for (const transaction of paymentTransactions) {
+    const count = idCounts.get(transaction.invoiceNumber) || 0;
+    idCounts.set(transaction.invoiceNumber, count + 1);
+    
+    if (count === 1) { // Second occurrence found
+      duplicates.push(transaction.invoiceNumber);
+    }
+  }
+  
+  console.log(`🔍 Payment ID validation: Found ${duplicates.length} duplicate payment IDs`);
+  
+  if (duplicates.length > 0) {
+    console.warn('Duplicate payment IDs found:', duplicates);
+  }
+  
+  return {
+    duplicatesFound: duplicates.length,
+    duplicatesFixed: 0 // For now, just reporting. Fixing would require updating storage
+  };
+};
+
 export const closeSheetRecord = async (id: string): Promise<void> => {
   const sheets = await getSheetHistory();
   const sheetIndex = sheets.findIndex(sheet => sheet.id === id);
   
-  if (sheetIndex === -1) return;
+  if (sheetIndex === -1) {
+    throw new Error(`Sheet with ID ${id} not found`);
+  }
   
   const sheet = sheets[sheetIndex];
+  
+  // Check if sheet is already closed
+  if (sheet.status === 'closed') {
+    throw new Error('Sheet is already closed');
+  }
+  
+  console.log(`🔒 Closing sheet ${id} - Starting financial record creation process...`);
+  console.log(`📊 Sheet details: Route ${sheet.routeName}, ${sheet.customers.length} customers`);
+  
   const products = await getProducts();
+  const currentCustomers = await getCustomers(); // Get fresh customer data
   
   // Process each customer's transactions
   for (const customer of sheet.customers) {
+    // Get current customer data to ensure we have the latest outstanding amount
+    const currentCustomer = currentCustomers.find(c => c.id === customer.id);
+    if (!currentCustomer) {
+      console.warn(`Customer ${customer.id} not found in current customer list`);
+      continue;
+    }
+    
     const customerDeliveryData = sheet.deliveryData[customer.id] || {};
-    const amountReceived = sheet.amountReceived?.[customer.id] || 0;
+    const amountReceived = sheet.amountReceived?.[customer.id] || { cash: 0, upi: 0, total: 0 };
+    
+    // Validate amountReceived data consistency
+    const calculatedTotal = (amountReceived.cash || 0) + (amountReceived.upi || 0);
+    if (Math.abs((amountReceived.total || 0) - calculatedTotal) > 0.01) {
+      throw new Error(`Payment total mismatch for customer ${customer.id}. Expected: ${calculatedTotal}, Got: ${amountReceived.total}`);
+    }
     
     // Calculate total purchase amount
     const customerTotal = Object.values(customerDeliveryData)
       .reduce((sum, item) => sum + item.amount, 0);
     
+    // Validate customerTotal calculation
+    let recalculatedTotal = 0;
+    for (const [productId, data] of Object.entries(customerDeliveryData)) {
+      if (data.quantity > 0) {
+        const product = products.find(p => p.id === productId);
+        if (product) {
+          const expectedRate = customer.productPrices[productId] || product.defaultPrice || 0;
+          const expectedAmount = data.quantity * expectedRate;
+          if (Math.abs(data.amount - expectedAmount) > 0.01) {
+            throw new Error(`Amount calculation error for customer ${customer.id}, product ${productId}. Expected: ${expectedAmount}, Got: ${data.amount}`);
+          }
+          recalculatedTotal += expectedAmount;
+        }
+      }
+    }
+    
+    if (Math.abs(customerTotal - recalculatedTotal) > 0.01) {
+      throw new Error(`Total calculation mismatch for customer ${customer.id}. Expected: ${recalculatedTotal}, Got: ${customerTotal}`);
+    }
+    
     // Process transaction if either purchase total OR amount received is not zero
-    if (customerTotal > 0 || amountReceived > 0) {
+    if (customerTotal > 0 || amountReceived.total > 0) {
+      
+      console.log(`💰 Creating financial records for customer ${customer.name} (${customer.id})`);
+      console.log(`📈 Purchase total: ₹${customerTotal}, Payment received: ₹${amountReceived.total}`);
       
       // Create sale transaction if customer purchased products
       if (customerTotal > 0) {
@@ -940,17 +1065,53 @@ export const closeSheetRecord = async (id: string): Promise<void> => {
           if (data.quantity > 0) {
             const product = products.find(p => p.id === productId);
             if (product) {
+              const unitPrice = customer.productPrices[productId] || product.defaultPrice || 0;
               saleItems.push({
+                id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 productName: product.name,
                 quantity: data.quantity,
-                price: data.amount / data.quantity, // Calculate unit price
+                price: unitPrice,
                 total: data.amount
               });
             }
           }
         }
         
+        // Generate unique invoice for this customer's purchase
+        const invoiceNumber = generateUniqueTransactionId('sale', customer.id, sheet.id);
+        
+        console.log(`📄 Creating invoice ${invoiceNumber} for customer ${customer.name}`);
+        
+        // Calculate final customer balance after this transaction using CURRENT outstanding
+        const balanceChange = customerTotal - amountReceived.total;
+        const finalBalance = currentCustomer.outstandingAmount + balanceChange;
+        
+        // Use separate cash and UPI amounts
+        const cashAmount = amountReceived.cash || 0;
+        const upiAmount = amountReceived.upi || 0;
+        
+        // Create invoice record
+        await addInvoice({
+          customerId: customer.id,
+          customerName: customer.name,
+          items: saleItems,
+          subtotal: customerTotal,
+          totalAmount: customerTotal,
+          amountReceived: amountReceived.total,
+          balanceChange: balanceChange,
+          date: new Date(),
+          status: amountReceived.total >= customerTotal ? 'paid' : 
+                  amountReceived.total > 0 ? 'partial' : 'pending',
+          routeId: sheet.routeId,
+          routeName: sheet.routeName,
+          sheetId: sheet.id,
+          cashAmount: cashAmount,
+          upiAmount: upiAmount,
+          customerFinalBalance: finalBalance
+        });
+        
         // Add sale transaction
+        console.log(`📊 Creating sale transaction for invoice ${invoiceNumber}`);
         await addTransaction({
           customerId: customer.id,
           customerName: customer.name,
@@ -960,7 +1121,7 @@ export const closeSheetRecord = async (id: string): Promise<void> => {
           amountReceived: 0, // Payment is separate transaction
           balanceChange: customerTotal, // Increases outstanding
           date: new Date(),
-          invoiceNumber: `SHEET-${sheet.id}-${customer.id}`,
+          invoiceNumber: invoiceNumber,
           routeId: sheet.routeId,
           routeName: sheet.routeName,
           sheetId: sheet.id
@@ -968,38 +1129,48 @@ export const closeSheetRecord = async (id: string): Promise<void> => {
       }
       
       // Create payment transaction if customer paid money
-      if (amountReceived > 0) {
+      if (amountReceived.total > 0) {
+        // Generate unique payment ID using timestamp and random component
+        const paymentId = generateUniqueTransactionId('payment', customer.id, sheet.id);
+        
+        console.log(`💳 Creating payment transaction ${paymentId} for ₹${amountReceived.total} (Cash: ₹${amountReceived.cash}, UPI: ₹${amountReceived.upi})`);
+        
         await addTransaction({
           customerId: customer.id,
           customerName: customer.name,
           type: 'payment',
           items: [],
           totalAmount: 0,
-          amountReceived: amountReceived,
-          balanceChange: -amountReceived, // Reduces outstanding
+          amountReceived: amountReceived.total,
+          balanceChange: -amountReceived.total, // Reduces outstanding
           date: new Date(),
-          invoiceNumber: `PAY-${sheet.id}-${customer.id}`,
+          invoiceNumber: paymentId,
           routeId: sheet.routeId,
           routeName: sheet.routeName,
           sheetId: sheet.id
         });
       }
       
-      // Update customer's outstanding amount
-      const outstandingChange = customerTotal - amountReceived;
-      const updatedCustomer = {
-        ...customer,
-        outstandingAmount: customer.outstandingAmount + outstandingChange
-      };
+      // Update customer's outstanding amount using CURRENT outstanding amount
+      const outstandingChange = customerTotal - amountReceived.total;
+      const updatedOutstanding = currentCustomer.outstandingAmount + outstandingChange;
+      
+      console.log(`🔄 Updating customer ${customer.name} outstanding: ₹${currentCustomer.outstandingAmount} + ₹${outstandingChange} = ₹${updatedOutstanding}`);
       
       // Update customer in the main storage
-      await updateCustomer(customer.id, { outstandingAmount: updatedCustomer.outstandingAmount });
+      await updateCustomer(customer.id, { outstandingAmount: updatedOutstanding });
+    } else {
+      console.log(`ℹ️ No financial activity for customer ${customer.name} - skipping record creation`);
     }
   }
+  
+  console.log(`✅ Financial records creation completed for sheet ${id}`);
   
   // Mark sheet as closed
   await updateSheetRecord(id, {
     status: 'closed',
     updatedAt: new Date()
   });
+  
+  console.log(`🔒 Sheet ${id} successfully closed`);
 };

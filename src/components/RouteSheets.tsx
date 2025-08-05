@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, FileText, Search, RefreshCw } from 'lucide-react';
-import { getRouteInfos, getCustomersByRoute, getProducts, saveSheetHistory, getSheetHistory } from '../utils/supabase-storage';
+import { getRouteInfos, getCustomersByRoute, getProducts, saveSheetHistory, getSheetHistory, checkSheetExists } from '../utils/supabase-storage';
 import { Customer, Product, RouteInfo } from '../types';
 
 interface RouteSheetProps {
@@ -68,6 +68,13 @@ export const RouteSheets: React.FC<RouteSheetProps> = ({ onPageChange }) => {
 
   const checkForActiveSheet = async (routeId: string) => {
     try {
+      // First check if there's already a sheet for this route on today's date
+      const existingSheet = await checkSheetExists(routeId);
+      if (existingSheet) {
+        return existingSheet;
+      }
+      
+      // Also check for any active sheets for this route (fallback for older data)
       const allSheets = await getSheetHistory();
       
       return allSheets.find(sheet => 
@@ -351,16 +358,16 @@ export const RouteSheets: React.FC<RouteSheetProps> = ({ onPageChange }) => {
               </div>
               <div className="ml-3">
                 <h3 className="text-lg font-medium text-gray-900">
-                  Active Route Sheet Exists
+                  Route Sheet Already Exists for Today
                 </h3>
               </div>
             </div>
             <div className="mb-4">
               <p className="text-sm text-gray-600">
-                An active route sheet for <strong>{duplicateRouteInfo.routeName}</strong> (Route ID: {duplicateRouteInfo.routeId}) already exists. 
+                A route sheet for <strong>{duplicateRouteInfo.routeName}</strong> (Route ID: {duplicateRouteInfo.routeId}) already exists for today. 
               </p>
               <p className="text-sm text-gray-600 mt-2">
-                Only one active sheet per route is allowed to prevent data inconsistency. Please close the existing sheet first before creating a new one.
+                Only one sheet per route per day is allowed to prevent data inconsistency. Please close the existing sheet first or wait until tomorrow to create a new one.
               </p>
             </div>
             <div className="flex space-x-3 justify-end">

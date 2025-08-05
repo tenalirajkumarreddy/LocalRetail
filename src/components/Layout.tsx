@@ -9,7 +9,8 @@ import {
   Menu,
   X,
   MapPin,
-  History
+  History,
+  CreditCard
 } from 'lucide-react';
 import { StatusIndicator } from './StatusIndicator';
 
@@ -28,6 +29,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageCha
     { name: 'Sheets History', id: 'sheets-history', icon: History },
     { name: 'Route Management', id: 'route-management', icon: MapPin },
     { name: 'Customers', id: 'customers', icon: Users },
+    { name: 'Payments', id: 'payments', icon: CreditCard },
     { name: 'Invoices', id: 'invoices', icon: FileText },
     { name: 'Products', id: 'products', icon: Package },
     { name: 'Settings', id: 'settings', icon: Settings },
