@@ -4,21 +4,28 @@ import { format } from 'date-fns';
 import { getProducts, getCompanySettings } from './supabase-storage';
 import { getSheetById, SheetRecord } from './supabase-storage';
 
-// Generate route sheet for printing - uses professional layout only with proper sheet ID
+// Generate route sheet for printing - uses appropriate layout based on sheet status
 export const printRouteSheet = async (route: string, customers: Customer[], sheetId?: string, sheetData?: SheetRecord): Promise<void> => {
   const companySettings = await getCompanySettings();
-  await printWithProfessionalLayout(route, customers, companySettings, sheetId, sheetData);
+  // Determine sheet status - default to 'active' if not provided
+  const sheetStatus = sheetData?.status || 'active';
+  await printWithProfessionalLayout(route, customers, companySettings, sheetId, sheetData, sheetStatus);
 };
 
-// Generate route sheet PDF - uses professional layout only with proper sheet ID
+// Generate route sheet PDF - uses appropriate layout based on sheet status
 export const generateRouteSheetPDF = async (route: string, customers: Customer[], sheetId?: string, sheetData?: SheetRecord): Promise<void> => {
   const companySettings = await getCompanySettings();
-  await generatePDFWithProfessionalLayout(route, customers, companySettings, sheetId, sheetData);
+  // Determine sheet status - default to 'active' if not provided
+  const sheetStatus = sheetData?.status || 'active';
+  await generatePDFWithProfessionalLayout(route, customers, companySettings, sheetId, sheetData, sheetStatus);
 };
 
-// Professional layout for printing with proper sheet data
-const printWithProfessionalLayout = async (route: string, customers: Customer[], companySettings: CompanySettings, sheetId?: string, sheetData?: SheetRecord): Promise<void> => {
+// Professional layout for printing with proper sheet data and status-based layout
+const printWithProfessionalLayout = async (route: string, customers: Customer[], companySettings: CompanySettings, sheetId?: string, sheetData?: SheetRecord, sheetStatus?: 'active' | 'closed'): Promise<void> => {
   const products = await getProducts();
+  
+  // Use provided status or default to 'active'
+  const status = sheetStatus || sheetData?.status || 'active';
   
   // Generate unique sheet ID if not provided (format: ROUTE-YYYYMMDD-ROUTECODE)
   const currentDate = format(new Date(), 'yyyyMMdd');
@@ -52,7 +59,7 @@ const printWithProfessionalLayout = async (route: string, customers: Customer[],
   const printWindow = window.open('', '_blank');
   if (printWindow) {
     const sheetsHTML = customerChunks.map((chunk, sheetIndex) => 
-      generateProfessionalRouteSheetHTML(route, chunk, products, companySettings, sheetIndex + 1, customerChunks.length, routeSheetId, sheetCreationDate)
+      generateProfessionalRouteSheetHTML(route, chunk, products, companySettings, sheetIndex + 1, customerChunks.length, routeSheetId, sheetCreationDate, status)
     ).join('<div style="page-break-before: always;"></div>');
     
     printWindow.document.write(`
@@ -177,7 +184,7 @@ const printWithProfessionalLayout = async (route: string, customers: Customer[],
   }
 };
 
-// Generate professional route sheet HTML content for each page with proper data fetching
+// Generate professional route sheet HTML content for each page with status-based layout
 const generateProfessionalRouteSheetHTML = (
   route: string, 
   customers: Customer[], 
@@ -186,22 +193,29 @@ const generateProfessionalRouteSheetHTML = (
   sheetNumber: number,
   totalSheets: number,
   sheetId?: string,
-  sheetCreationDate?: Date
+  sheetCreationDate?: Date,
+  sheetStatus?: 'active' | 'closed'
 ): string => {
   // Use provided sheet creation date or current date as fallback
   const sheetGenerationDate = sheetCreationDate || new Date();
   const currentDate = format(sheetGenerationDate, 'yyyyMMdd');
   const routeSheetId = sheetId || `ROUTE-${currentDate}-${route}`;
   
+  // Determine if this is a closed sheet (needs Amount Total column)
+  const isClosed = sheetStatus === 'closed';
+  
   // Use first 3 products or default names
   const prodA = products[0]?.name || '500 ML';
   const prodB = products[1]?.name || '1 Ltr'; 
   const prodC = products[2]?.name || '250 ML';
   
-  // Generate empty rows to fill up to 25 rows
+  // Generate empty rows to fill up to 25 rows (only for active sheets)
   const allRows = [...customers];
-  while (allRows.length < 25) {
-    allRows.push({} as Customer); // Empty customer for blank rows
+  if (!isClosed) {
+    // Only add empty rows for active sheets
+    while (allRows.length < 25) {
+      allRows.push({} as Customer); // Empty customer for blank rows
+    }
   }
   
   return `
@@ -239,14 +253,16 @@ const generateProfessionalRouteSheetHTML = (
             <th colspan="6" style="width: 34%;">Cases</th>
             <th rowspan="3" style="width: 7%;">Total</th>
             <th rowspan="3" style="width: 8%;">Amount<br>Due</th>
-            <th colspan="2" style="width: 12%;">Amount Received</th>
+            <th colspan="2" style="width: ${isClosed ? '10%' : '12%'};">Amount Received</th>
+            ${isClosed ? '<th rowspan="3" style="width: 7%;">Amount<br>Total</th>' : ''}
           </tr>
           <tr>
             <th colspan="2">${prodA}</th>
             <th colspan="2">${prodB}</th>
             <th colspan="2">${prodC}</th>
-            <th style="width: 6%;">CASH</th>
-            <th style="width: 6%;">UPI</th>
+            <th style="width: ${isClosed ? '5%' : '6%'};">CASH</th>
+            <th style="width: ${isClosed ? '5%' : '6%'};">UPI</th>
+            ${isClosed ? '' : ''}
           </tr>
           <tr>
             <th style="width: 6%; font-size: 7px;">Qty</th>
@@ -255,8 +271,9 @@ const generateProfessionalRouteSheetHTML = (
             <th style="width: 6%; font-size: 7px;">Rate</th>
             <th style="width: 6%; font-size: 7px;">Qty</th>
             <th style="width: 6%; font-size: 7px;">Rate</th>
-            <th style="width: 6%; font-size: 7px;"></th>
-            <th style="width: 6%; font-size: 7px;"></th>
+            <th style="width: ${isClosed ? '5%' : '6%'}; font-size: 7px;"></th>
+            <th style="width: ${isClosed ? '5%' : '6%'}; font-size: 7px;"></th>
+            ${isClosed ? '' : ''}
           </tr>
         </thead>
         <tbody>
@@ -280,6 +297,7 @@ const generateProfessionalRouteSheetHTML = (
                   <td></td>
                   <td></td>
                   <td></td>
+                  ${isClosed ? '<td></td>' : ''}
                 </tr>
               `;
             }
@@ -330,11 +348,42 @@ const generateProfessionalRouteSheetHTML = (
                 <td style="font-weight: bold; font-size: 8px;">${Math.abs(customer.outstandingAmount || 0)}</td>
                 <td></td>
                 <td></td>
+                ${isClosed ? '<td style="font-weight: bold; font-size: 8px;"></td>' : ''}
               </tr>
             `;
           }).join('')}
         </tbody>
       </table>
+      
+      ${isClosed ? `
+        <div style="margin-top: 10px;">
+          <table style="width: 100%; border-collapse: collapse; border: 0.5px solid #000;">
+            <tr>
+              <th colspan="2" style="border: 0.5px solid #000; padding: 5px 2px; text-align: center; font-size: 9px; font-weight: bold; background: #e9ecef; height: 22px;">Summary</th>
+            </tr>
+            <tr style="height: 22px;">
+              <td style="border: 0.5px solid #000; padding: 5px 8px; font-size: 9px; font-weight: bold; width: 50%;">Total Sale:</td>
+              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;"></td>
+            </tr>
+            <tr style="height: 22px;">
+              <td style="border: 0.5px solid #000; padding: 5px 8px; font-size: 9px; font-weight: bold; width: 50%;">Amount Due:</td>
+              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;"></td>
+            </tr>
+            <tr style="height: 22px;">
+              <td style="border: 0.5px solid #000; padding: 5px 8px; font-size: 9px; font-weight: bold; width: 50%;">Amount Collected:</td>
+              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;"></td>
+            </tr>
+            <tr style="height: 22px;">
+              <td style="border: 0.5px solid #000; padding: 5px 8px; font-size: 9px; font-weight: bold; width: 50%;">Amount Pending:</td>
+              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;"></td>
+            </tr>
+            <tr style="height: 22px;">
+              <td style="border: 0.5px solid #000; padding: 5px 8px; font-size: 9px; font-weight: bold; width: 50%;">New Outstanding:</td>
+              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;"></td>
+            </tr>
+          </table>
+        </div>
+      ` : ''}
       
       ${totalSheets > 1 ? `
         <div style="margin-top: 10px; text-align: center; font-size: 9px; color: #666;">
@@ -345,9 +394,12 @@ const generateProfessionalRouteSheetHTML = (
   `;
 };
 
-// PDF generation with professional layout and proper data fetching
-const generatePDFWithProfessionalLayout = async (route: string, customers: Customer[], companySettings: CompanySettings, sheetId?: string, sheetData?: SheetRecord): Promise<void> => {
+// PDF generation with professional layout and status-based layout
+const generatePDFWithProfessionalLayout = async (route: string, customers: Customer[], companySettings: CompanySettings, sheetId?: string, sheetData?: SheetRecord, sheetStatus?: 'active' | 'closed'): Promise<void> => {
   const products = await getProducts();
+  
+  // Use provided status or default to 'active'
+  const status = sheetStatus || sheetData?.status || 'active';
   
   // Generate unique sheet ID if not provided
   const currentDate = format(new Date(), 'yyyyMMdd');
@@ -394,13 +446,13 @@ const generatePDFWithProfessionalLayout = async (route: string, customers: Custo
     }
     
     const chunk = customerChunks[chunkIndex];
-    await addSheetToPDF(pdf, route, chunk, products, companySettings, chunkIndex + 1, customerChunks.length, routeSheetId, sheetCreationDate);
+    await addSheetToPDF(pdf, route, chunk, products, companySettings, chunkIndex + 1, customerChunks.length, routeSheetId, sheetCreationDate, status);
   }
   
   pdf.save(`Route-${route}-Sheet-${format(sheetCreationDate, 'dd-MM-yyyy')}.pdf`);
 };
 
-// Add a single sheet to the PDF with proper data fetching and Sheet ID
+// Add a single sheet to the PDF with proper data fetching, Sheet ID, and status-based layout
 const addSheetToPDF = async (
   pdf: jsPDF,
   route: string,
@@ -410,11 +462,15 @@ const addSheetToPDF = async (
   sheetNumber: number,
   totalSheets: number,
   sheetId?: string,
-  sheetCreationDate?: Date
+  sheetCreationDate?: Date,
+  sheetStatus?: 'active' | 'closed'
 ): Promise<void> => {
   const pageWidth = 297; // A4 landscape width
   const pageHeight = 210; // A4 landscape height
   const margin = 8;
+  
+  // Determine if this is a closed sheet (needs Amount Total column)
+  const isClosed = sheetStatus === 'closed';
   
   // Use provided sheet creation date or current date as fallback
   const sheetGenerationDate = sheetCreationDate || new Date();
@@ -498,10 +554,12 @@ const addSheetToPDF = async (
   const tableWidth = pageWidth - 2 * margin;
   const rowHeight = 5;
   
-  // Optimized column widths with Total column - 15 columns total
-  // [S.No, Cust ID, Cust Name, Phone, Area, 500ML, Rate, 1Ltr, Rate, 250ML, Rate, Total, Amount Due, CASH, UPI]
-  // Adjusted for 10px font size - no font changes, only width optimization
-  const colWidths = [10, 18, 36, 26, 43, 13, 13, 13, 13, 13, 13, 20, 22, 16, 16];
+  // Optimized column widths - conditional based on sheet status
+  // Active: [S.No, Cust ID, Cust Name, Phone, Area, 500ML, Rate, 1Ltr, Rate, 250ML, Rate, Total, Amount Due, CASH, UPI] = 15 columns
+  // Closed: [S.No, Cust ID, Cust Name, Phone, Area, 500ML, Rate, 1Ltr, Rate, 250ML, Rate, Total, Amount Due, CASH, UPI, Amount Total] = 16 columns
+  const colWidths = isClosed 
+    ? [10, 18, 36, 26, 43, 13, 13, 13, 13, 13, 13, 20, 22, 14, 14, 18] // 16 columns for closed sheets
+    : [10, 18, 36, 26, 43, 13, 13, 13, 13, 13, 13, 20, 22, 16, 16]; // 15 columns for active sheets
   const scaleFactor = tableWidth / colWidths.reduce((a, b) => a + b);
   const scaledWidths = colWidths.map(w => w * scaleFactor);
   
@@ -512,8 +570,10 @@ const addSheetToPDF = async (
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
   
-  // Main headers - Updated to include Total column and use actual product names
-  const headers = ['S.No', 'Customer ID', 'Customer Name', 'Phone Number', 'Area', prodA, 'Rate', prodB, 'Rate', prodC, 'Rate', 'Total', 'Amount Due', 'CASH', 'UPI'];
+  // Main headers - conditionally include Amount Total for closed sheets
+  const headers = isClosed 
+    ? ['S.No', 'Customer ID', 'Customer Name', 'Phone Number', 'Area', prodA, 'Rate', prodB, 'Rate', prodC, 'Rate', 'Total', 'Amount Due', 'CASH', 'UPI', 'Amount Total']
+    : ['S.No', 'Customer ID', 'Customer Name', 'Phone Number', 'Area', prodA, 'Rate', prodB, 'Rate', prodC, 'Rate', 'Total', 'Amount Due', 'CASH', 'UPI'];
   
   currentX = margin;
   const headerHeight = rowHeight * 3.5; // Increased height for better text spacing with more line gaps
@@ -550,10 +610,13 @@ const addSheetToPDF = async (
   // Optimized row height for better spacing
   const dataRowHeight = 5.5;
   
-  // Fill up to 25 rows
+  // Fill up to 25 rows (only for active sheets)
   const allRows = [...customers];
-  while (allRows.length < 25) {
-    allRows.push({} as Customer); // Empty customer for blank rows
+  if (sheetStatus !== 'closed') {
+    // Only add empty rows for active sheets
+    while (allRows.length < 25) {
+      allRows.push({} as Customer); // Empty customer for blank rows
+    }
   }
   
   for (let i = 0; i < allRows.length; i++) {
@@ -591,8 +654,8 @@ const addSheetToPDF = async (
     const rate1ltr = (customer.productPrices && product1ltr?.id && customer.productPrices[product1ltr.id]) || product1ltr?.defaultPrice || 35;
     const rate250ml = (customer.productPrices && product250ml?.id && customer.productPrices[product250ml.id]) || product250ml?.defaultPrice || 12;
     
-    // Data for each column including Total
-    const rowData = [
+    // Data for each column - conditionally include Amount Total for closed sheets
+    const baseRowData = [
       globalIndex.toString(),
       customer.id || '',
       customer.name || '',
@@ -609,6 +672,9 @@ const addSheetToPDF = async (
       '', // CASH amount (blank for manual entry)
       '' // UPI amount (blank for manual entry)
     ];
+    
+    // Add Amount Total column for closed sheets
+    const rowData = isClosed ? [...baseRowData, ''] : baseRowData;
     
     for (let j = 0; j < rowData.length; j++) {
       const width = scaledWidths[j];
@@ -633,6 +699,55 @@ const addSheetToPDF = async (
     }
     
     currentY += dataRowHeight;
+  }
+  
+  // Add summary table for closed sheets
+  if (isClosed) {
+    currentY += 8; // Add some spacing
+    
+    // Summary table dimensions - compact 6x2 table
+    const summaryTableWidth = tableWidth * 0.4; // Use 40% of table width for more compact size
+    const summaryTableX = margin + (tableWidth - summaryTableWidth) / 2; // Center the summary table
+    const summaryRowHeight = 5.5; // Same as data row height
+    const summaryTableHeight = summaryRowHeight * 6; // 6 rows total
+    
+    // Draw summary table border and content
+    pdf.setLineWidth(0.2);
+    pdf.setFontSize(9); // Same font size as data table
+    
+    let summaryY = currentY;
+    
+    // Header row - "Summary" spanning both columns
+    pdf.rect(summaryTableX, summaryY, summaryTableWidth, summaryRowHeight);
+    pdf.setFillColor(233, 236, 239); // Same header background as main table
+    pdf.rect(summaryTableX, summaryY, summaryTableWidth, summaryRowHeight, 'F');
+    pdf.setFont('helvetica', 'bold');
+    const headerText = 'Summary';
+    const headerTextWidth = pdf.getTextWidth(headerText);
+    const headerXOffset = (summaryTableWidth - headerTextWidth) / 2;
+    pdf.text(headerText, summaryTableX + headerXOffset, summaryY + 3.5);
+    
+    summaryY += summaryRowHeight;
+    
+    // Data rows
+    const summaryLabels = ['Total Sale:', 'Amount Due:', 'Amount Collected:', 'Amount Pending:', 'New Outstanding:'];
+    const labelColumnWidth = summaryTableWidth * 0.6; // 60% for label, 40% for value
+    const valueColumnWidth = summaryTableWidth * 0.4;
+    
+    pdf.setFont('helvetica', 'bold');
+    
+    for (let i = 0; i < summaryLabels.length; i++) {
+      // Label column
+      pdf.rect(summaryTableX, summaryY, labelColumnWidth, summaryRowHeight);
+      pdf.text(summaryLabels[i], summaryTableX + 3, summaryY + 3.5);
+      
+      // Value column (empty for manual entry)
+      pdf.rect(summaryTableX + labelColumnWidth, summaryY, valueColumnWidth, summaryRowHeight);
+      
+      summaryY += summaryRowHeight;
+    }
+    
+    currentY += summaryTableHeight + 5;
   }
   
   // Sheet footer
