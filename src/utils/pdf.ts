@@ -54,12 +54,91 @@ const printWithProfessionalLayout = async (route: string, customers: Customer[],
   for (let i = 0; i < customers.length; i += CUSTOMERS_PER_SHEET) {
     customerChunks.push(customers.slice(i, i + CUSTOMERS_PER_SHEET));
   }
+
+  // Calculate summary values for closed sheets
+  let summaryValues: { totalSale: string; totalDue: string; totalCollected: string; totalAmountReceived: string; amountPending: string; routeOutstanding: string; newRouteOutstanding: string; } | undefined;
+  if (status === 'closed' && sheetData) {
+    const { deliveryData, amountReceived } = sheetData;
+    
+    let totalSale = 0;
+    let totalDue = 0;
+    let totalCollected = 0;
+    let totalAmountReceived = 0;
+
+    customers.forEach((customer) => {
+      // Calculate current outstanding
+      totalDue += Math.abs(customer.outstandingAmount || 0);
+      
+      // Calculate total sale from delivery data
+      if (deliveryData && deliveryData[customer.id]) {
+        const customerDelivery = deliveryData[customer.id];
+        
+        const product500ml = products.find(p => p.name === '500 ML' || p.name === 'Product A');
+        const product1ltr = products.find(p => p.name === '1 Ltr' || p.name === 'Product B');
+        const product250ml = products.find(p => p.name === '250 ML' || p.name === 'Product C');
+        
+        const rate500ml = (customer.productPrices && product500ml?.id && customer.productPrices[product500ml.id]) || product500ml?.defaultPrice || 25;
+        const rate1ltr = (customer.productPrices && product1ltr?.id && customer.productPrices[product1ltr.id]) || product1ltr?.defaultPrice || 35;
+        const rate250ml = (customer.productPrices && product250ml?.id && customer.productPrices[product250ml.id]) || product250ml?.defaultPrice || 12;
+        
+        if (product500ml?.id && customerDelivery[product500ml.id]) {
+          totalSale += customerDelivery[product500ml.id].quantity * rate500ml;
+        }
+        if (product1ltr?.id && customerDelivery[product1ltr.id]) {
+          totalSale += customerDelivery[product1ltr.id].quantity * rate1ltr;
+        }
+        if (product250ml?.id && customerDelivery[product250ml.id]) {
+          totalSale += customerDelivery[product250ml.id].quantity * rate250ml;
+        }
+      }
+      
+      // Calculate total collected and total received
+      if (amountReceived && amountReceived[customer.id]) {
+        const payment = amountReceived[customer.id];
+        totalCollected += (payment.cash || 0) + (payment.upi || 0);
+        totalAmountReceived += payment.total || 0;
+      }
+    });
+
+    // Calculate derived values
+    const amountPending = totalSale - totalAmountReceived;
+    
+    // Old Route Outstanding: stored value from when sheet was generated
+    const oldRouteOutstanding = sheetData.routeOutstanding || 0;
+    
+    // New Route Outstanding: calculated using formula
+    const newRouteOutstandingFormula = oldRouteOutstanding + totalSale - totalAmountReceived;
+    
+    // New Route Outstanding: sum of current customer outstandings (should match formula)
+    const newRouteOutstandingSum = customers.reduce((total, customer) => {
+      return total + Math.abs(customer.outstandingAmount || 0);
+    }, 0);
+    
+    // Debug: Log both calculation methods to verify they match
+    console.log('Route Outstanding Calculation Comparison:');
+    console.log('Old Route Outstanding (stored):', oldRouteOutstanding);
+    console.log('Total Sale:', totalSale);
+    console.log('Amount Total (received):', totalAmountReceived);
+    console.log('Formula: Old + Total Sale - Amount Total =', newRouteOutstandingFormula);
+    console.log('Sum of Current Customer Outstandings =', newRouteOutstandingSum);
+    console.log('Difference:', Math.abs(newRouteOutstandingFormula - newRouteOutstandingSum));
+
+    summaryValues = {
+      totalSale: totalSale.toString(),
+      totalDue: totalDue.toString(),
+      totalCollected: totalCollected.toString(),
+      totalAmountReceived: totalAmountReceived.toString(),
+      amountPending: amountPending.toString(),
+      routeOutstanding: oldRouteOutstanding.toString(),
+      newRouteOutstanding: newRouteOutstandingFormula.toString() // Using formula method
+    };
+  }
   
   // Create a new window for printing with landscape orientation
   const printWindow = window.open('', '_blank');
   if (printWindow) {
     const sheetsHTML = customerChunks.map((chunk, sheetIndex) => 
-      generateProfessionalRouteSheetHTML(route, chunk, products, companySettings, sheetIndex + 1, customerChunks.length, routeSheetId, sheetCreationDate, status)
+      generateProfessionalRouteSheetHTML(route, chunk, products, companySettings, sheetIndex + 1, customerChunks.length, routeSheetId, sheetCreationDate, status, sheetData, summaryValues)
     ).join('<div style="page-break-before: always;"></div>');
     
     printWindow.document.write(`
@@ -194,7 +273,9 @@ const generateProfessionalRouteSheetHTML = (
   totalSheets: number,
   sheetId?: string,
   sheetCreationDate?: Date,
-  sheetStatus?: 'active' | 'closed'
+  sheetStatus?: 'active' | 'closed',
+  sheetData?: SheetRecord,
+  summaryValues?: { totalSale: string; totalDue: string; totalCollected: string; totalAmountReceived: string; amountPending: string; routeOutstanding: string; newRouteOutstanding: string; }
 ): string => {
   // Use provided sheet creation date or current date as fallback
   const sheetGenerationDate = sheetCreationDate || new Date();
@@ -216,6 +297,17 @@ const generateProfessionalRouteSheetHTML = (
     while (allRows.length < 25) {
       allRows.push({} as Customer); // Empty customer for blank rows
     }
+  } else {
+    // For closed sheets, filter customers who actually bought products
+    const customersWithPurchases = customers.filter(customer => {
+      if (!sheetData?.deliveryData) return false;
+      const deliveryData = typeof sheetData.deliveryData === 'string' 
+        ? JSON.parse(sheetData.deliveryData) 
+        : sheetData.deliveryData;
+      return deliveryData && deliveryData[customer.id];
+    });
+    allRows.length = 0; // Clear the array
+    allRows.push(...customersWithPurchases);
   }
   
   return `
@@ -331,6 +423,68 @@ const generateProfessionalRouteSheetHTML = (
             const rate1ltr = (customer.productPrices && product1ltr?.id && customer.productPrices[product1ltr.id]) || product1ltr?.defaultPrice || 35;
             const rate250ml = (customer.productPrices && product250ml?.id && customer.productPrices[product250ml.id]) || product250ml?.defaultPrice || 12;
             
+            // For closed sheets, get delivery data and payment info
+            let quantities = { qty500ml: '', qty1ltr: '', qty250ml: '' };
+            let totals = { total500ml: '', total1ltr: '', total250ml: '', grandTotal: '', amountTotal: '' };
+            let payments = { cash: '', upi: '' };
+            
+            if (isClosed && sheetData) {
+              // Parse delivery data
+              const deliveryData = typeof sheetData.deliveryData === 'string' 
+                ? JSON.parse(sheetData.deliveryData) 
+                : sheetData.deliveryData;
+              
+              // Parse amount received data
+              const amountReceived = typeof sheetData.amountReceived === 'string'
+                ? JSON.parse(sheetData.amountReceived)
+                : sheetData.amountReceived;
+              
+              if (deliveryData && deliveryData[customer.id]) {
+                const customerDelivery = deliveryData[customer.id];
+                let grandTotalAmount = 0;
+                
+                // Get quantities and calculate totals for each product
+                if (product500ml?.id && customerDelivery[product500ml.id]) {
+                  quantities.qty500ml = customerDelivery[product500ml.id].quantity.toString();
+                  totals.total500ml = (customerDelivery[product500ml.id].quantity * rate500ml).toString();
+                  grandTotalAmount += customerDelivery[product500ml.id].quantity * rate500ml;
+                } else {
+                  quantities.qty500ml = '0'; // Show 0 instead of empty
+                }
+                
+                if (product1ltr?.id && customerDelivery[product1ltr.id]) {
+                  quantities.qty1ltr = customerDelivery[product1ltr.id].quantity.toString();
+                  totals.total1ltr = (customerDelivery[product1ltr.id].quantity * rate1ltr).toString();
+                  grandTotalAmount += customerDelivery[product1ltr.id].quantity * rate1ltr;
+                } else {
+                  quantities.qty1ltr = '0'; // Show 0 instead of empty
+                }
+                
+                if (product250ml?.id && customerDelivery[product250ml.id]) {
+                  quantities.qty250ml = customerDelivery[product250ml.id].quantity.toString();
+                  totals.total250ml = (customerDelivery[product250ml.id].quantity * rate250ml).toString();
+                  grandTotalAmount += customerDelivery[product250ml.id].quantity * rate250ml;
+                } else {
+                  quantities.qty250ml = '0'; // Show 0 instead of empty
+                }
+                
+                totals.grandTotal = grandTotalAmount.toString();
+              }
+              
+              // Get payment information
+              if (amountReceived && amountReceived[customer.id]) {
+                const customerPayment = amountReceived[customer.id];
+                payments.cash = customerPayment.cash?.toString() || '0';
+                payments.upi = customerPayment.upi?.toString() || '0';
+                // Amount Total should be the total from amount_received
+                totals.amountTotal = customerPayment.total?.toString() || '0';
+              } else {
+                payments.cash = '0';
+                payments.upi = '0';
+                totals.amountTotal = '0';
+              }
+            }
+            
             return `
               <tr style="height: 22px;">
                 <td>${globalIndex}</td>
@@ -338,17 +492,17 @@ const generateProfessionalRouteSheetHTML = (
                 <td style="text-align: left; font-size: 8px;">${customer.name}</td>
                 <td style="font-size: 7px; font-weight: bold;">${customer.phone || ''}</td>
                 <td style="text-align: left; font-size: 8px;">${customer.address || ''}</td>
-                <td style="font-size: 7px;"></td>
+                <td style="font-size: 7px;">${isClosed ? quantities.qty500ml : ''}</td>
                 <td style="font-size: 7px;">${rate500ml}</td>
-                <td style="font-size: 7px;"></td>
+                <td style="font-size: 7px;">${isClosed ? quantities.qty1ltr : ''}</td>
                 <td style="font-size: 7px;">${rate1ltr}</td>
-                <td style="font-size: 7px;"></td>
+                <td style="font-size: 7px;">${isClosed ? quantities.qty250ml : ''}</td>
                 <td style="font-size: 7px;">${rate250ml}</td>
-                <td style="font-size: 7px;"></td>
+                <td style="font-size: 7px;">${isClosed ? totals.grandTotal : ''}</td>
                 <td style="font-weight: bold; font-size: 8px;">${Math.abs(customer.outstandingAmount || 0)}</td>
-                <td></td>
-                <td></td>
-                ${isClosed ? '<td style="font-weight: bold; font-size: 8px;"></td>' : ''}
+                <td>${isClosed ? payments.cash : ''}</td>
+                <td>${isClosed ? payments.upi : ''}</td>
+                ${isClosed ? `<td style="font-weight: bold; font-size: 8px;">${totals.amountTotal}</td>` : ''}
               </tr>
             `;
           }).join('')}
@@ -356,30 +510,34 @@ const generateProfessionalRouteSheetHTML = (
       </table>
       
       ${isClosed ? `
-        <div style="margin-top: 10px;">
-          <table style="width: 100%; border-collapse: collapse; border: 0.5px solid #000;">
+        <div style="margin-top: 10px; display: flex; justify-content: flex-end;">
+          <table style="width: 40%; border-collapse: collapse; border: 0.5px solid #000;">
             <tr>
               <th colspan="2" style="border: 0.5px solid #000; padding: 5px 2px; text-align: center; font-size: 9px; font-weight: bold; background: #e9ecef; height: 22px;">Summary</th>
             </tr>
             <tr style="height: 22px;">
               <td style="border: 0.5px solid #000; padding: 5px 8px; font-size: 9px; font-weight: bold; width: 50%;">Total Sale:</td>
-              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;"></td>
+              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;">${summaryValues?.totalSale || ''}</td>
             </tr>
             <tr style="height: 22px;">
               <td style="border: 0.5px solid #000; padding: 5px 8px; font-size: 9px; font-weight: bold; width: 50%;">Amount Due:</td>
-              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;"></td>
+              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;">${summaryValues?.totalDue || ''}</td>
             </tr>
             <tr style="height: 22px;">
-              <td style="border: 0.5px solid #000; padding: 5px 8px; font-size: 9px; font-weight: bold; width: 50%;">Amount Collected:</td>
-              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;"></td>
+              <td style="border: 0.5px solid #000; padding: 5px 8px; font-size: 9px; font-weight: bold; width: 50%;">Amount Total:</td>
+              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;">${summaryValues?.totalAmountReceived || ''}</td>
             </tr>
             <tr style="height: 22px;">
               <td style="border: 0.5px solid #000; padding: 5px 8px; font-size: 9px; font-weight: bold; width: 50%;">Amount Pending:</td>
-              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;"></td>
+              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;">${summaryValues?.amountPending || ''}</td>
             </tr>
             <tr style="height: 22px;">
-              <td style="border: 0.5px solid #000; padding: 5px 8px; font-size: 9px; font-weight: bold; width: 50%;">New Outstanding:</td>
-              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;"></td>
+              <td style="border: 0.5px solid #000; padding: 5px 8px; font-size: 9px; font-weight: bold; width: 50%;">Old Route Outstanding:</td>
+              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;">${summaryValues?.routeOutstanding || ''}</td>
+            </tr>
+            <tr style="height: 22px;">
+              <td style="border: 0.5px solid #000; padding: 5px 8px; font-size: 9px; font-weight: bold; width: 50%;">New Route Outstanding:</td>
+              <td style="border: 0.5px solid #000; padding: 5px 2px; font-size: 9px; width: 50%;">${summaryValues?.newRouteOutstanding || ''}</td>
             </tr>
           </table>
         </div>
@@ -446,7 +604,7 @@ const generatePDFWithProfessionalLayout = async (route: string, customers: Custo
     }
     
     const chunk = customerChunks[chunkIndex];
-    await addSheetToPDF(pdf, route, chunk, products, companySettings, chunkIndex + 1, customerChunks.length, routeSheetId, sheetCreationDate, status);
+    await addSheetToPDF(pdf, route, chunk, products, companySettings, chunkIndex + 1, customerChunks.length, routeSheetId, sheetCreationDate, status, sheetData);
   }
   
   pdf.save(`Route-${route}-Sheet-${format(sheetCreationDate, 'dd-MM-yyyy')}.pdf`);
@@ -463,7 +621,8 @@ const addSheetToPDF = async (
   totalSheets: number,
   sheetId?: string,
   sheetCreationDate?: Date,
-  sheetStatus?: 'active' | 'closed'
+  sheetStatus?: 'active' | 'closed',
+  sheetData?: SheetRecord
 ): Promise<void> => {
   const pageWidth = 297; // A4 landscape width
   const pageHeight = 210; // A4 landscape height
@@ -617,6 +776,17 @@ const addSheetToPDF = async (
     while (allRows.length < 25) {
       allRows.push({} as Customer); // Empty customer for blank rows
     }
+  } else {
+    // For closed sheets, filter customers who actually bought products
+    const customersWithPurchases = customers.filter(customer => {
+      if (!sheetData?.deliveryData) return false;
+      const deliveryData = typeof sheetData.deliveryData === 'string' 
+        ? JSON.parse(sheetData.deliveryData) 
+        : sheetData.deliveryData;
+      return deliveryData && deliveryData[customer.id];
+    });
+    allRows.length = 0; // Clear the array
+    allRows.push(...customersWithPurchases);
   }
   
   for (let i = 0; i < allRows.length; i++) {
@@ -654,6 +824,68 @@ const addSheetToPDF = async (
     const rate1ltr = (customer.productPrices && product1ltr?.id && customer.productPrices[product1ltr.id]) || product1ltr?.defaultPrice || 35;
     const rate250ml = (customer.productPrices && product250ml?.id && customer.productPrices[product250ml.id]) || product250ml?.defaultPrice || 12;
     
+    // For closed sheets, get delivery data and payment info
+    let quantities = { qty500ml: '', qty1ltr: '', qty250ml: '' };
+    let totals = { total500ml: '', total1ltr: '', total250ml: '', grandTotal: '', amountTotal: '' };
+    let payments = { cash: '', upi: '' };
+    
+    if (isClosed && sheetData && customer.id) {
+      // Parse delivery data
+      const deliveryData = typeof sheetData.deliveryData === 'string' 
+        ? JSON.parse(sheetData.deliveryData) 
+        : sheetData.deliveryData;
+      
+      // Parse amount received data
+      const amountReceived = typeof sheetData.amountReceived === 'string'
+        ? JSON.parse(sheetData.amountReceived)
+        : sheetData.amountReceived;
+      
+      if (deliveryData && deliveryData[customer.id]) {
+        const customerDelivery = deliveryData[customer.id];
+        let grandTotalAmount = 0;
+        
+        // Get quantities and calculate totals for each product
+        if (product500ml?.id && customerDelivery[product500ml.id]) {
+          quantities.qty500ml = customerDelivery[product500ml.id].quantity.toString();
+          totals.total500ml = (customerDelivery[product500ml.id].quantity * rate500ml).toString();
+          grandTotalAmount += customerDelivery[product500ml.id].quantity * rate500ml;
+        } else {
+          quantities.qty500ml = '0'; // Show 0 instead of empty
+        }
+        
+        if (product1ltr?.id && customerDelivery[product1ltr.id]) {
+          quantities.qty1ltr = customerDelivery[product1ltr.id].quantity.toString();
+          totals.total1ltr = (customerDelivery[product1ltr.id].quantity * rate1ltr).toString();
+          grandTotalAmount += customerDelivery[product1ltr.id].quantity * rate1ltr;
+        } else {
+          quantities.qty1ltr = '0'; // Show 0 instead of empty
+        }
+        
+        if (product250ml?.id && customerDelivery[product250ml.id]) {
+          quantities.qty250ml = customerDelivery[product250ml.id].quantity.toString();
+          totals.total250ml = (customerDelivery[product250ml.id].quantity * rate250ml).toString();
+          grandTotalAmount += customerDelivery[product250ml.id].quantity * rate250ml;
+        } else {
+          quantities.qty250ml = '0'; // Show 0 instead of empty
+        }
+        
+        totals.grandTotal = grandTotalAmount.toString();
+      }
+      
+      // Get payment information
+      if (amountReceived && amountReceived[customer.id]) {
+        const customerPayment = amountReceived[customer.id];
+        payments.cash = customerPayment.cash?.toString() || '0';
+        payments.upi = customerPayment.upi?.toString() || '0';
+        // Amount Total should be the total from amount_received
+        totals.amountTotal = customerPayment.total?.toString() || '0';
+      } else {
+        payments.cash = '0';
+        payments.upi = '0';
+        totals.amountTotal = '0';
+      }
+    }
+    
     // Data for each column - conditionally include Amount Total for closed sheets
     const baseRowData = [
       globalIndex.toString(),
@@ -661,20 +893,20 @@ const addSheetToPDF = async (
       customer.name || '',
       customer.phone || '',
       customer.address || '',
-      customer.id ? '' : '', // 500ML quantity (empty for manual entry)
+      customer.id ? (isClosed ? quantities.qty500ml : '') : '', // 500ML quantity
       customer.id ? rate500ml.toString() : '', // 500ML rate (customer-specific)
-      customer.id ? '' : '', // 1Ltr quantity (empty for manual entry)
+      customer.id ? (isClosed ? quantities.qty1ltr : '') : '', // 1Ltr quantity
       customer.id ? rate1ltr.toString() : '', // 1Ltr rate (customer-specific)
-      customer.id ? '' : '', // 250ML quantity (empty for manual entry)
+      customer.id ? (isClosed ? quantities.qty250ml : '') : '', // 250ML quantity
       customer.id ? rate250ml.toString() : '', // 250ML rate (customer-specific)
-      customer.id ? '' : '', // Total (empty for manual calculation)
+      customer.id ? (isClosed ? totals.grandTotal : '') : '', // Total
       customer.id && customer.outstandingAmount !== undefined ? Math.abs(customer.outstandingAmount).toString() : customer.id ? '0' : '', // Amount Due (current outstanding)
-      '', // CASH amount (blank for manual entry)
-      '' // UPI amount (blank for manual entry)
+      isClosed ? payments.cash : '', // CASH amount
+      isClosed ? payments.upi : '' // UPI amount
     ];
     
     // Add Amount Total column for closed sheets
-    const rowData = isClosed ? [...baseRowData, ''] : baseRowData;
+    const rowData = isClosed ? [...baseRowData, totals.amountTotal] : baseRowData;
     
     for (let j = 0; j < rowData.length; j++) {
       const width = scaledWidths[j];
@@ -701,15 +933,123 @@ const addSheetToPDF = async (
     currentY += dataRowHeight;
   }
   
+  // Calculate summary data for closed sheets
+  let summaryValues = { totalSale: '', totalDue: '', totalCollected: '', totalAmountReceived: '', amountPending: '', routeOutstanding: '', newRouteOutstanding: '' };
+  
+  if (isClosed && sheetData) {
+    const deliveryData = typeof sheetData.deliveryData === 'string' 
+      ? JSON.parse(sheetData.deliveryData) 
+      : sheetData.deliveryData;
+    const amountReceived = typeof sheetData.amountReceived === 'string' 
+      ? JSON.parse(sheetData.amountReceived) 
+      : sheetData.amountReceived;
+    
+    let totalSale = 0;
+    let totalDue = 0;
+    let totalCollected = 0;
+    let totalAmountReceived = 0; // Total from amount_received.total field
+    
+    allRows.forEach(customer => {
+      if (customer.id) {
+        // Calculate total due
+        totalDue += Math.abs(customer.outstandingAmount || 0);
+        
+        // Calculate total sale
+        if (deliveryData && deliveryData[customer.id]) {
+          const customerDelivery = deliveryData[customer.id];
+          
+          const product500ml = products.find(p => 
+            p.name.toLowerCase().includes('500ml') || 
+            p.name.toLowerCase().includes('500') ||
+            p.name.toLowerCase().includes('product a') ||
+            p.name.toLowerCase().includes('a')
+          ) || products[0];
+          
+          const product1ltr = products.find(p => 
+            p.name.toLowerCase().includes('1ltr') || 
+            p.name.toLowerCase().includes('1l') || 
+            p.name.toLowerCase().includes('liter') ||
+            p.name.toLowerCase().includes('product b') ||
+            p.name.toLowerCase().includes('b')
+          ) || products[1];
+          
+          const product250ml = products.find(p => 
+            p.name.toLowerCase().includes('250ml') || 
+            p.name.toLowerCase().includes('250') ||
+            p.name.toLowerCase().includes('product c') ||
+            p.name.toLowerCase().includes('c')
+          ) || products[2];
+          
+          const rate500ml = (customer.productPrices && product500ml?.id && customer.productPrices[product500ml.id]) || product500ml?.defaultPrice || 20;
+          const rate1ltr = (customer.productPrices && product1ltr?.id && customer.productPrices[product1ltr.id]) || product1ltr?.defaultPrice || 35;
+          const rate250ml = (customer.productPrices && product250ml?.id && customer.productPrices[product250ml.id]) || product250ml?.defaultPrice || 12;
+          
+          if (product500ml?.id && customerDelivery[product500ml.id]) {
+            totalSale += customerDelivery[product500ml.id].quantity * rate500ml;
+          }
+          if (product1ltr?.id && customerDelivery[product1ltr.id]) {
+            totalSale += customerDelivery[product1ltr.id].quantity * rate1ltr;
+          }
+          if (product250ml?.id && customerDelivery[product250ml.id]) {
+            totalSale += customerDelivery[product250ml.id].quantity * rate250ml;
+          }
+        }
+        
+        // Calculate total collected (cash + upi) and total received (from amount_received.total)
+        if (amountReceived && amountReceived[customer.id]) {
+          const payment = amountReceived[customer.id];
+          totalCollected += (payment.cash || 0) + (payment.upi || 0);
+          totalAmountReceived += payment.total || 0; // This is the Amount Total
+        }
+      }
+    });
+    
+    // Calculate Amount Pending = Total Sale - Amount Total (from amount_received.total)
+    const amountPending = totalSale - totalAmountReceived;
+    
+    // Old Route Outstanding: stored value from when sheet was generated
+    const oldRouteOutstanding = sheetData.routeOutstanding || 0;
+    
+    // New Route Outstanding: calculated using formula
+    const newRouteOutstandingFormula = oldRouteOutstanding + totalSale - totalAmountReceived;
+    
+    // New Route Outstanding: sum of current customer outstandings (should match formula)
+    const newRouteOutstandingSum = allRows.reduce((total, customer) => {
+      if (customer.id) {
+        return total + Math.abs(customer.outstandingAmount || 0);
+      }
+      return total;
+    }, 0);
+    
+    // Debug: Log both calculation methods to verify they match (PDF section)
+    console.log('PDF Route Outstanding Calculation Comparison:');
+    console.log('Old Route Outstanding (stored):', oldRouteOutstanding);
+    console.log('Total Sale:', totalSale);
+    console.log('Amount Total (received):', totalAmountReceived);
+    console.log('Formula: Old + Total Sale - Amount Total =', newRouteOutstandingFormula);
+    console.log('Sum of Current Customer Outstandings =', newRouteOutstandingSum);
+    console.log('Difference:', Math.abs(newRouteOutstandingFormula - newRouteOutstandingSum));
+
+    summaryValues = {
+      totalSale: totalSale.toString(),
+      totalDue: totalDue.toString(),
+      totalCollected: totalCollected.toString(),
+      totalAmountReceived: totalAmountReceived.toString(),
+      amountPending: amountPending.toString(),
+      routeOutstanding: oldRouteOutstanding.toString(),
+      newRouteOutstanding: newRouteOutstandingFormula.toString() // Using formula method
+    };
+  }
+  
   // Add summary table for closed sheets
   if (isClosed) {
     currentY += 8; // Add some spacing
     
     // Summary table dimensions - compact 6x2 table
     const summaryTableWidth = tableWidth * 0.4; // Use 40% of table width for more compact size
-    const summaryTableX = margin + (tableWidth - summaryTableWidth) / 2; // Center the summary table
+    const summaryTableX = margin + tableWidth - summaryTableWidth; // Align summary table to the right
     const summaryRowHeight = 5.5; // Same as data row height
-    const summaryTableHeight = summaryRowHeight * 6; // 6 rows total
+    const summaryTableHeight = summaryRowHeight * 7; // 7 rows total (1 header + 6 data rows)
     
     // Draw summary table border and content
     pdf.setLineWidth(0.2);
@@ -730,7 +1070,8 @@ const addSheetToPDF = async (
     summaryY += summaryRowHeight;
     
     // Data rows
-    const summaryLabels = ['Total Sale:', 'Amount Due:', 'Amount Collected:', 'Amount Pending:', 'New Outstanding:'];
+    const summaryLabels = ['Total Sale:', 'Amount Due:', 'Amount Total:', 'Amount Pending:', 'Old Outstanding:', 'New Outstanding:'];
+    const summaryData = [summaryValues.totalSale, summaryValues.totalDue, summaryValues.totalAmountReceived, summaryValues.amountPending, summaryValues.routeOutstanding, summaryValues.newRouteOutstanding];
     const labelColumnWidth = summaryTableWidth * 0.6; // 60% for label, 40% for value
     const valueColumnWidth = summaryTableWidth * 0.4;
     
@@ -741,8 +1082,13 @@ const addSheetToPDF = async (
       pdf.rect(summaryTableX, summaryY, labelColumnWidth, summaryRowHeight);
       pdf.text(summaryLabels[i], summaryTableX + 3, summaryY + 3.5);
       
-      // Value column (empty for manual entry)
+      // Value column
       pdf.rect(summaryTableX + labelColumnWidth, summaryY, valueColumnWidth, summaryRowHeight);
+      if (summaryData[i]) {
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(summaryData[i], summaryTableX + labelColumnWidth + 3, summaryY + 3.5);
+        pdf.setFont('helvetica', 'bold');
+      }
       
       summaryY += summaryRowHeight;
     }

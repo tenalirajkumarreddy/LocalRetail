@@ -785,6 +785,7 @@ export interface SheetRecord {
       total: number;
     };
   };
+  routeOutstanding: number; // Route outstanding at the time of sheet closure
   notes: string;
 }
 
@@ -808,6 +809,7 @@ export const getSheetHistory = async (): Promise<SheetRecord[]> => {
         status: sheet.status as 'active' | 'closed',
         deliveryData: sheet.delivery_data || {},
         amountReceived: sheet.amount_received || {},
+        routeOutstanding: sheet.route_outstanding || 0,
         notes: sheet.notes || '',
         createdAt: new Date(sheet.created_at),
         updatedAt: new Date(sheet.updated_at)
@@ -856,6 +858,7 @@ export const getSheetById = async (sheetId: string): Promise<SheetRecord | null>
         status: data.status as 'active' | 'closed',
         deliveryData: data.delivery_data || {},
         amountReceived: data.amount_received || {},
+        routeOutstanding: data.route_outstanding || 0,
         notes: data.notes || '',
         createdAt: new Date(data.created_at),
         updatedAt: new Date(data.updated_at)
@@ -914,6 +917,7 @@ export const saveSheetHistory = async (sheetRecord: Omit<SheetRecord, 'id' | 'cr
           status: sheetRecord.status,
           delivery_data: sheetRecord.deliveryData,
           amount_received: sheetRecord.amountReceived,
+          route_outstanding: sheetRecord.routeOutstanding,
           notes: sheetRecord.notes
         })
         .select('id')
@@ -955,6 +959,7 @@ export const updateSheetRecord = async (id: string, updates: Partial<SheetRecord
           status: updates.status,
           delivery_data: updates.deliveryData,
           amount_received: updates.amountReceived,
+          route_outstanding: updates.routeOutstanding,
           notes: updates.notes,
           updated_at: new Date().toISOString()
         })

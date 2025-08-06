@@ -95,6 +95,11 @@ export const RouteSheets: React.FC<RouteSheetProps> = ({ onPageChange }) => {
 
     setLoading(true);
     try {
+      // Calculate total route outstanding from all customers
+      const totalRouteOutstanding = customers.reduce((total, customer) => {
+        return total + Math.abs(customer.outstandingAmount || 0);
+      }, 0);
+
       // Create sheet history record
       await saveSheetHistory({
         routeId: routeInfo.id,
@@ -103,6 +108,7 @@ export const RouteSheets: React.FC<RouteSheetProps> = ({ onPageChange }) => {
         status: 'active',
         deliveryData: {},
         amountReceived: {},
+        routeOutstanding: totalRouteOutstanding,
         notes: ''
       });
       

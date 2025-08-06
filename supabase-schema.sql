@@ -85,6 +85,7 @@ CREATE TABLE route_sheets (
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed')),
   delivery_data JSONB NOT NULL DEFAULT '{}', -- Object with customer delivery quantities and amounts
   amount_received JSONB NOT NULL DEFAULT '{}', -- Object with customer payment amounts - supports {customerId: {cash: number, upi: number, total: number}} format
+  route_outstanding DECIMAL(10,2) NOT NULL DEFAULT 0, -- Route outstanding at the time of sheet closure
   notes TEXT DEFAULT '',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
