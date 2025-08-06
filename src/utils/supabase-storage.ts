@@ -826,11 +826,66 @@ export const getSheetHistory = async (): Promise<SheetRecord[]> => {
   })) : [];
 };
 
-// Generate unique sheet ID with format: ROUTE-<DATE>-<ROUTECODE>
+// Get a specific sheet by ID
+export const getSheetById = async (sheetId: string): Promise<SheetRecord | null> => {
+  const mode = getStorageMode();
+  
+  if (mode === 'supabase') {
+    try {
+      const { data, error } = await supabase
+        .from(TABLES.SHEETS)
+        .select('*')
+        .eq('id', sheetId)
+        .single();
+      
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // No rows returned
+          return null;
+        }
+        throw error;
+      }
+      
+      if (!data) return null;
+      
+      return {
+        id: data.id,
+        routeId: data.route_id,
+        routeName: data.route_name,
+        customers: data.customers || [],
+        status: data.status as 'active' | 'closed',
+        deliveryData: data.delivery_data || {},
+        amountReceived: data.amount_received || {},
+        notes: data.notes || '',
+        createdAt: new Date(data.created_at),
+        updatedAt: new Date(data.updated_at)
+      };
+    } catch (error) {
+      console.warn('Error fetching sheet by ID from Supabase:', error);
+      return null;
+    }
+  }
+  
+  // Fallback to localStorage
+  const data = localStorage.getItem('sales_app_sheets_history');
+  if (!data) return null;
+  
+  const sheets = JSON.parse(data);
+  const sheet = sheets.find((s: any) => s.id === sheetId);
+  
+  return sheet ? {
+    ...sheet,
+    createdAt: new Date(sheet.createdAt),
+    updatedAt: new Date(sheet.updatedAt)
+  } : null;
+};
+
+// Generate unique sheet ID with format: ROUTE-<DATE>-<TIME>-<ROUTECODE>
 export const generateSheetId = (routeId: string, date?: Date): string => {
   const currentDate = date || new Date();
   const dateStr = currentDate.toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD format
-  return `ROUTE-${dateStr}-${routeId}`;
+  const timeStr = currentDate.toISOString().split('T')[1].split('.')[0].replace(/:/g, ''); // HHMMSS format
+  return `ROUTE-${dateStr}-${timeStr}-${routeId}`;
 };
 
 // Check if a sheet already exists for a route on a specific date
@@ -844,7 +899,7 @@ export const checkSheetExists = async (routeId: string, date?: Date): Promise<Sh
 export const saveSheetHistory = async (sheetRecord: Omit<SheetRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> => {
   const mode = getStorageMode();
   
-  // Generate custom sheet ID with format: ROUTE-<DATE>-<ROUTECODE>
+  // Generate custom sheet ID with format: ROUTE-<DATE>-<TIME>-<ROUTECODE>
   const customSheetId = generateSheetId(sheetRecord.routeId);
   
   if (mode === 'supabase') {
