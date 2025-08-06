@@ -582,7 +582,7 @@ export const SheetsHistory: React.FC = () => {
   const handleDownloadPDF = async (sheet: SheetRecord) => {
     setDropdownOpen(null);
     try {
-      await generateRouteSheetPDF(`${sheet.routeId} - ${sheet.routeName}`, sheet.customers);
+      await generateRouteSheetPDF(`${sheet.routeId} - ${sheet.routeName}`, sheet.customers, sheet.id, sheet);
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Error generating PDF. Please try again.');
@@ -592,7 +592,7 @@ export const SheetsHistory: React.FC = () => {
   const handlePrintSheet = async (sheet: SheetRecord) => {
     setDropdownOpen(null);
     try {
-      await printRouteSheet(`${sheet.routeId} - ${sheet.routeName}`, sheet.customers);
+      await printRouteSheet(`${sheet.routeId} - ${sheet.routeName}`, sheet.customers, sheet.id, sheet);
     } catch (error) {
       console.error('Error opening print dialog:', error);
       alert('Error opening print dialog. Please try again.');

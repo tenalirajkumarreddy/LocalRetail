@@ -3,20 +3,20 @@ import { Customer, Product, CompanySettings } from '../types';
 import { format } from 'date-fns';
 import { getProducts, getCompanySettings } from './storage';
 
-// Generate route sheet for printing - uses professional layout only with proper sheet ID
-export const printRouteSheet = async (route: string, customers: Customer[], sheetId?: string): Promise<void> => {
+// Generate route sheet for printing - uses professional layout only with proper sheet ID and sheet data
+export const printRouteSheet = async (route: string, customers: Customer[], sheetId?: string, sheetData?: any): Promise<void> => {
   const companySettings = await getCompanySettings();
-  await printWithProfessionalLayout(route, customers, companySettings, sheetId);
+  await printWithProfessionalLayout(route, customers, companySettings, sheetId, sheetData);
 };
 
-// Generate route sheet PDF - uses professional layout only with proper sheet ID
-export const generateRouteSheetPDF = async (route: string, customers: Customer[], sheetId?: string): Promise<void> => {
+// Generate route sheet PDF - uses professional layout only with proper sheet ID and sheet data
+export const generateRouteSheetPDF = async (route: string, customers: Customer[], sheetId?: string, sheetData?: any): Promise<void> => {
   const companySettings = await getCompanySettings();
-  await generatePDFWithProfessionalLayout(route, customers, companySettings, sheetId);
+  await generatePDFWithProfessionalLayout(route, customers, companySettings, sheetId, sheetData);
 };
 
 // Professional layout for printing with proper sheet data
-const printWithProfessionalLayout = async (route: string, customers: Customer[], companySettings: CompanySettings, sheetId?: string): Promise<void> => {
+const printWithProfessionalLayout = async (route: string, customers: Customer[], companySettings: CompanySettings, sheetId?: string, sheetData?: any): Promise<void> => {
   const products = await getProducts();
   
   // Generate unique sheet ID if not provided (format: ROUTE-YYYYMMDD-ROUTECODE)
@@ -34,7 +34,7 @@ const printWithProfessionalLayout = async (route: string, customers: Customer[],
   const printWindow = window.open('', '_blank');
   if (printWindow) {
     const sheetsHTML = customerChunks.map((chunk, sheetIndex) => 
-      generateProfessionalRouteSheetHTML(route, chunk, products, companySettings, sheetIndex + 1, customerChunks.length, routeSheetId)
+      generateProfessionalRouteSheetHTML(route, chunk, products, companySettings, sheetIndex + 1, customerChunks.length, routeSheetId, sheetData)
     ).join('<div style="page-break-before: always;"></div>');
     
     printWindow.document.write(`
@@ -167,7 +167,8 @@ const generateProfessionalRouteSheetHTML = (
   companySettings: CompanySettings,
   sheetNumber: number,
   totalSheets: number,
-  sheetId?: string
+  sheetId?: string,
+  sheetData?: any
 ): string => {
   // Generate sheet timestamp and ID
   const sheetGenerationDate = new Date();
@@ -247,6 +248,364 @@ const generateProfessionalRouteSheetHTML = (
               return `
                 <tr style="height: 22px;">
                   <td>${globalIndex}</td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                </tr>
+              `;
+            }
+            
+            // Get actual delivery data from sheet if available
+            const deliveryData = sheetData?.deliveryData?.[customer.id] || {};
+            const amountReceived = sheetData?.amountReceived?.[customer.id] || { cash: 0, upi: 0, total: 0 };
+            
+            // Get customer-specific product prices (custom prices from customer.productPrices)
+            const product500ml = products.find(p => p.name.toLowerCase().includes('500ml') || p.name.toLowerCase().includes('500')) || products[0];
+            const product1ltr = products.find(p => p.name.toLowerCase().includes('1ltr') || p.name.toLowerCase().includes('1l') || p.name.toLowerCase().includes('liter')) || products[1];
+            const product250ml = products.find(p => p.name.toLowerCase().includes('250ml') || p.name.toLowerCase().includes('250')) || products[2];
+            
+            // Use customer-specific pricing if available, otherwise default pricing with proper null checks
+            const rate500ml = (customer.productPrices && product500ml?.id && customer.productPrices[product500ml.id]) || product500ml?.defaultPrice || 20;
+            const rate1ltr = (customer.productPrices && product1ltr?.id && customer.productPrices[product1ltr.id]) || product1ltr?.defaultPrice || 35;
+            const rate250ml = (customer.productPrices && product250ml?.id && customer.productPrices[product250ml.id]) || product250ml?.defaultPrice || 12;
+            
+            // Get actual quantities from delivery data or default to 0
+            const qty500ml = deliveryData[product500ml?.id]?.quantity || 0;
+            const qty1ltr = deliveryData[product1ltr?.id]?.quantity || 0;
+            const qty250ml = deliveryData[product250ml?.id]?.quantity || 0;
+            
+            // Calculate total purchase amount
+            const totalPurchase = (qty500ml * rate500ml) + (qty1ltr * rate1ltr) + (qty250ml * rate250ml);
+            
+            // Get payment amounts (ensure backward compatibility)
+            const cashAmount = typeof amountReceived === 'number' ? amountReceived : (amountReceived.cash || 0);
+            const upiAmount = typeof amountReceived === 'number' ? 0 : (amountReceived.upi || 0);
+            const totalReceived = typeof amountReceived === 'number' ? amountReceived : (amountReceived.total || 0);
+            
+            return `
+              <tr style="height: 22px;">
+                <td>${globalIndex}</td>
+                <td style="font-size: 8px; font-weight: bold;">${customer.id}</td>
+                <td style="text-align: left; font-size: 8px;">${customer.name}</td>
+                <td style="font-size: 7px; font-weight: bold;">${customer.phone || ''}</td>
+                <td style="text-align: left; font-size: 8px;">${customer.address || ''}</td>
+                <td style="font-size: 7px;">${qty500ml}</td>
+                <td style="font-size: 7px;">₹${rate500ml}</td>
+                <td style="font-size: 7px;">${qty1ltr}</td>
+                <td style="font-size: 7px;">₹${rate1ltr}</td>
+                <td style="font-size: 7px;">${qty250ml}</td>
+                <td style="font-size: 7px;">₹${rate250ml}</td>
+                <td style="font-size: 7px;">₹${totalPurchase}</td>
+                <td style="font-weight: bold; font-size: 8px;">₹${Math.abs(customer.outstandingAmount || 0)}</td>
+                <td style="font-size: 7px;">₹${cashAmount}</td>
+                <td style="font-size: 7px;">₹${upiAmount}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+      
+      ${totalSheets > 1 ? `
+        <div style="margin-top: 10px; text-align: center; font-size: 9px; color: #666;">
+          Sheet ${sheetNumber} of ${totalSheets} | Route: ${route} | ID: ${routeSheetId} | Generated: ${format(sheetGenerationDate, 'dd/MM/yyyy HH:mm')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+};
+
+// PDF generation with professional layout and proper data fetching
+const generatePDFWithProfessionalLayout = async (route: string, customers: Customer[], companySettings: CompanySettings, sheetId?: string, sheetData?: any): Promise<void> => {
+  const products = await getProducts();
+  
+  // Generate unique sheet ID if not provided
+  const currentDate = format(new Date(), 'yyyyMMdd');
+  const routeSheetId = sheetId || `ROUTE-${currentDate}-${route}`;
+  
+  // Split customers into chunks of 25 per sheet
+  const CUSTOMERS_PER_SHEET = 25;
+  const customerChunks = [];
+  for (let i = 0; i < customers.length; i += CUSTOMERS_PER_SHEET) {
+    customerChunks.push(customers.slice(i, i + CUSTOMERS_PER_SHEET));
+  }
+  
+  const pdf = new jsPDF('landscape', 'mm', 'a4'); // Landscape A4
+  
+  for (let chunkIndex = 0; chunkIndex < customerChunks.length; chunkIndex++) {
+    if (chunkIndex > 0) {
+      pdf.addPage();
+    }
+    
+    const chunk = customerChunks[chunkIndex];
+    await addSheetToPDF(pdf, route, chunk, products, companySettings, chunkIndex + 1, customerChunks.length, routeSheetId, sheetData);
+  }
+  
+  pdf.save(`Route-${route}-Sheet-${format(new Date(), 'dd-MM-yyyy')}.pdf`);
+};
+
+// Add a single sheet to the PDF with proper data fetching and Sheet ID
+const addSheetToPDF = async (
+  pdf: jsPDF,
+  route: string,
+  customers: Customer[],
+  products: Product[],
+  companySettings: CompanySettings,
+  sheetNumber: number,
+  totalSheets: number,
+  sheetId?: string,
+  sheetData?: any
+): Promise<void> => {
+  const pageWidth = 297; // A4 landscape width
+  const pageHeight = 210; // A4 landscape height
+  const margin = 8;
+  
+  // Generate sheet timestamp and ID
+  const sheetGenerationDate = new Date();
+  const currentDate = format(sheetGenerationDate, 'yyyyMMdd');
+  const routeSheetId = sheetId || `ROUTE-${currentDate}-${route}`;
+  
+  // Set consistent line width for all borders
+  pdf.setLineWidth(0.2); // Reduced border width for cleaner look
+  
+  // Company header with vertical and horizontal centering
+  pdf.setFontSize(16);
+  pdf.setFont('helvetica', 'bold');
+  const companyName = companySettings.companyName || 'Aqua Prime Retail';
+  const companyWidth = pdf.getTextWidth(companyName);
+  const companyHeaderHeight = 10;
+  
+  // Draw the header rectangle
+  pdf.rect(margin, margin, pageWidth - 2 * margin, companyHeaderHeight);
+  
+  // Center horizontally and vertically
+  const xPosition = (pageWidth - companyWidth) / 2;
+  const yPosition = margin + (companyHeaderHeight / 2) + 3; // Center vertically with slight adjustment for text baseline
+  
+  pdf.text(companyName, xPosition, yPosition);
+  
+  // Info row with 5 cells now (added Route ID)
+  const infoY = margin + 15;
+  const infoHeight = 10;
+  const totalInfoWidth = pageWidth - 2 * margin;
+  
+  // Define cell widths based on content - optimized for each field
+  const infoCellWidths = [
+    totalInfoWidth * 0.13, // Date - 18%
+    totalInfoWidth * 0.10, // Time - 15%
+    totalInfoWidth * 0.23, // Route - 20%
+    totalInfoWidth * 0.29, // Route ID - 22%
+    totalInfoWidth * 0.25  // Agent - 25%
+  ];
+  
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  
+  let currentInfoX = margin;
+  
+  // Date cell
+  pdf.rect(currentInfoX, infoY, infoCellWidths[0], infoHeight);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(`Date: ${format(sheetGenerationDate, 'dd/MM/yyyy')}`, currentInfoX + 2, infoY + 7);
+  currentInfoX += infoCellWidths[0];
+  
+  // Time cell
+  pdf.rect(currentInfoX, infoY, infoCellWidths[1], infoHeight);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(`Time: ${format(sheetGenerationDate, 'HH:mm')}`, currentInfoX + 2, infoY + 7);
+  currentInfoX += infoCellWidths[1];
+  
+  // Route cell
+  pdf.rect(currentInfoX, infoY, infoCellWidths[2], infoHeight);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(`Route: ${route}`, currentInfoX + 2, infoY + 7);
+  currentInfoX += infoCellWidths[2];
+  
+  // Route ID cell (new) - showing the actual sheet ID
+  pdf.rect(currentInfoX, infoY, infoCellWidths[3], infoHeight);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(`Route ID: ${routeSheetId}`, currentInfoX + 2, infoY + 7);
+  currentInfoX += infoCellWidths[3];
+  
+  // Agent cell
+  pdf.setFont('helvetica', 'normal');
+  pdf.rect(currentInfoX, infoY, infoCellWidths[4], infoHeight);
+  pdf.text('Agent: _______________', currentInfoX + 2, infoY + 7);
+  
+  // Table
+  const tableY = infoY + 15;
+  const tableWidth = pageWidth - 2 * margin;
+  const rowHeight = 5;
+  
+  // Optimized column widths with Total column - 15 columns total
+  // [S.No, Cust ID, Cust Name, Phone, Area, 500ML, Rate, 1Ltr, Rate, 250ML, Rate, Total, Amount Due, CASH, UPI]
+  // Adjusted for 10px font size - no font changes, only width optimization
+  const colWidths = [10, 18, 36, 26, 43, 13, 13, 13, 13, 13, 13, 20, 22, 16, 16];
+  const scaleFactor = tableWidth / colWidths.reduce((a, b) => a + b);
+  const scaledWidths = colWidths.map(w => w * scaleFactor);
+  
+  let currentX = margin;
+  let currentY = tableY;
+  
+  // Header rows - with proper centering and wrapping
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  
+  // Main headers - Updated to include Total column
+  const headers = ['S.No', 'Customer ID', 'Customer Name', 'Phone Number', 'Area', '500ML', 'Rate', '1Ltr', 'Rate', '250ML', 'Rate', 'Total', 'Amount Due', 'CASH', 'UPI'];
+  
+  currentX = margin;
+  const headerHeight = rowHeight * 3.5; // Increased height for better text spacing with more line gaps
+  for (let i = 0; i < headers.length; i++) {
+    const width = scaledWidths[i];
+    pdf.rect(currentX, currentY, width, headerHeight);
+    
+    // Center the text horizontally and vertically with improved wrapping
+    const headerText = headers[i];
+    const wrappedText = pdf.splitTextToSize(headerText, width - 3); // More margin for wrapping
+    
+    // Calculate proper vertical spacing with increased line spacing
+    const cellHeight = headerHeight;
+    const lineHeight = 3.0; // Increased line height to prevent overlap between wrapped lines
+    const totalTextHeight = wrappedText.length * lineHeight;
+    const yOffset = (cellHeight - totalTextHeight) / 2;
+    
+    // Draw each line of wrapped text with more spacing between lines
+    wrappedText.forEach((line: string, lineIndex: number) => {
+      const lineWidth = pdf.getTextWidth(line);
+      const lineXOffset = (width - lineWidth) / 2;
+      const lineYPosition = currentY + yOffset + 5 + (lineIndex * lineHeight);
+      pdf.text(line, currentX + Math.max(1, lineXOffset), lineYPosition);
+    });
+    
+    currentX += width;
+  }
+  
+  // Data rows
+  currentY += headerHeight + 2;
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  
+  // Optimized row height for better spacing
+  const dataRowHeight = 5.5;
+  
+  // Fill up to 25 rows
+  const allRows = [...customers];
+  while (allRows.length < 25) {
+    allRows.push({} as Customer); // Empty customer for blank rows
+  }
+  
+  for (let i = 0; i < allRows.length; i++) {
+    const customer = allRows[i];
+    const globalIndex = (sheetNumber - 1) * 25 + i + 1;
+    
+    currentX = margin;
+    
+    if (!customer.id) {
+      // Empty row
+      const emptyRowData = Array(15).fill('');
+      emptyRowData[0] = globalIndex.toString();
+      
+      for (let j = 0; j < emptyRowData.length; j++) {
+        const width = scaledWidths[j];
+        pdf.rect(currentX, currentY, width, dataRowHeight);
+        if (emptyRowData[j]) {
+          pdf.text(emptyRowData[j], currentX + 1, currentY + 3.5);
+        }
+        currentX += width;
+      }
+    } else {
+      // Get actual delivery data from sheet if available
+      const deliveryData = sheetData?.deliveryData?.[customer.id] || {};
+      const amountReceived = sheetData?.amountReceived?.[customer.id] || { cash: 0, upi: 0, total: 0 };
+      
+      // Get products and use customer-specific pricing
+      const product500ml = products.find(p => p.name.toLowerCase().includes('500ml') || p.name.toLowerCase().includes('500')) || products[0];
+      const product1ltr = products.find(p => p.name.toLowerCase().includes('1ltr') || p.name.toLowerCase().includes('1l') || p.name.toLowerCase().includes('liter')) || products[1];
+      const product250ml = products.find(p => p.name.toLowerCase().includes('250ml') || p.name.toLowerCase().includes('250')) || products[2];
+      
+      // Use customer-specific pricing if available, otherwise default pricing with proper null checks
+      const rate500ml = (customer.productPrices && product500ml?.id && customer.productPrices[product500ml.id]) || product500ml?.defaultPrice || 20;
+      const rate1ltr = (customer.productPrices && product1ltr?.id && customer.productPrices[product1ltr.id]) || product1ltr?.defaultPrice || 35;
+      const rate250ml = (customer.productPrices && product250ml?.id && customer.productPrices[product250ml.id]) || product250ml?.defaultPrice || 12;
+      
+      // Get actual quantities from delivery data or default to 0
+      const qty500ml = deliveryData[product500ml?.id]?.quantity || 0;
+      const qty1ltr = deliveryData[product1ltr?.id]?.quantity || 0;
+      const qty250ml = deliveryData[product250ml?.id]?.quantity || 0;
+      
+      // Calculate total purchase amount
+      const totalPurchase = (qty500ml * rate500ml) + (qty1ltr * rate1ltr) + (qty250ml * rate250ml);
+      
+      // Get payment amounts (ensure backward compatibility)
+      const cashAmount = typeof amountReceived === 'number' ? amountReceived : (amountReceived.cash || 0);
+      const upiAmount = typeof amountReceived === 'number' ? 0 : (amountReceived.upi || 0);
+      
+      // Data for each column including Total
+      const rowData = [
+        globalIndex.toString(),
+        customer.id || '',
+        customer.name || '',
+        customer.phone || '',
+        customer.address || '',
+        qty500ml.toString(), // Actual quantity from sheet data
+        `₹${rate500ml}`, // Customer-specific rate
+        qty1ltr.toString(), // Actual quantity from sheet data
+        `₹${rate1ltr}`, // Customer-specific rate
+        qty250ml.toString(), // Actual quantity from sheet data
+        `₹${rate250ml}`, // Customer-specific rate
+        `₹${totalPurchase}`, // Calculated total purchase
+        customer.outstandingAmount !== undefined ? `₹${Math.abs(customer.outstandingAmount)}` : '₹0', // Current outstanding
+        `₹${cashAmount}`, // Actual cash received
+        `₹${upiAmount}` // Actual UPI received
+      ];
+      
+      for (let j = 0; j < rowData.length; j++) {
+        const width = scaledWidths[j];
+        pdf.rect(currentX, currentY, width, dataRowHeight);
+        if (rowData[j]) {
+          // Set font weight - bold for phone number column (index 3) and amount due column (index 12)
+          if (j === 3 || j === 12) {
+            pdf.setFont('helvetica', 'bold');
+          } else {
+            pdf.setFont('helvetica', 'normal');
+          }
+          
+          // Center text in cell with proper vertical alignment
+          const cellText = rowData[j];
+          const textWidth = pdf.getTextWidth(cellText);
+          const xOffset = (width - textWidth) / 2;
+          const yOffset = dataRowHeight / 2 + 1.5; // Center vertically with slight adjustment
+          
+          pdf.text(cellText, currentX + Math.max(1, xOffset), currentY + yOffset);
+        }
+        currentX += width;
+      }
+    }
+    
+    currentY += dataRowHeight;
+  }
+  
+  // Sheet footer
+  if (totalSheets > 1) {
+    pdf.setFontSize(10);
+    pdf.text(
+      `Sheet ${sheetNumber} of ${totalSheets} | Route: ${route} | ID: ${routeSheetId} | Generated: ${format(sheetGenerationDate, 'dd/MM/yyyy HH:mm')}`,
+      margin,
+      pageHeight - 5
+    );
+  }
+};
                   <td></td>
                   <td></td>
                   <td></td>
