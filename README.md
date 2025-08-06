@@ -1,4 +1,4 @@
-# LocalRetail - Sales Management System HI
+# LocalRetail - Sales Management System
 
 A comprehensive sales management system designed for local retail businesses, distributors, and route-based sales operations.
 
