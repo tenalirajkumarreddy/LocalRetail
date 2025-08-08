@@ -11,23 +11,19 @@ import {
   updateCustomer
 } from '../utils/supabase-storage';
 import { useData, useDataEntity } from '../contexts/DataContext';
-import { Invoice, Customer, InvoiceItem, Product } from '../types';
+import { Invoice, Customer, InvoiceItem } from '../types';
 
 export const Invoices: React.FC = () => {
   // Use the data context instead of local state
   const dataContext = useData();
   const { 
-    data: allInvoices, 
-    loading: loadingInvoices, 
-    refresh: refreshInvoices 
+    data: allInvoices
   } = useDataEntity('invoices');
   const { 
-    data: allCustomers, 
-    loading: loadingCustomers 
+    data: allCustomers
   } = useDataEntity('customers');
   const { 
-    data: allProducts, 
-    loading: loadingProducts 
+    data: allProducts
   } = useDataEntity('products');
 
   const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);

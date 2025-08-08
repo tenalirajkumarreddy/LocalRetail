@@ -18,7 +18,6 @@ import {
   updateSheetRecord,
   deleteSheetRecord,
   closeSheetRecord,
-  getCustomers,
   SheetRecord
 } from '../utils/supabase-storage';
 import { generateRouteSheetPDF, printRouteSheet } from '../utils/pdf';
@@ -126,59 +125,6 @@ export const SheetsHistory: React.FC = () => {
       document.removeEventListener('click', handleClickOutside);
     };
   }, [dropdownOpen]);
-
-  // Add automatic data consistency repair function
-  const repairDataConsistency = async () => {
-    try {
-      console.log('Starting data consistency repair...');
-      
-      const allCustomers = await getCustomers();
-      const repairCount = { customers: 0, sheets: 0 };
-      
-      for (const customer of allCustomers) {
-        // Recalculate outstanding amount from all closed sheets
-        const customerSheets = sheetRecords.filter((sheet: SheetRecord) => 
-          sheet.status === 'closed' && 
-          sheet.customers?.some((c: any) => c.id === customer.id)
-        );
-        
-        let recalculatedOutstanding = 0;
-        for (const sheet of customerSheets) {
-          const customerDeliveryData = sheet.deliveryData[customer.id];
-          const customerAmountReceived = sheet.amountReceived[customer.id];
-          
-          if (customerDeliveryData) {
-            let totalDelivered = 0;
-            for (const productId in customerDeliveryData) {
-              totalDelivered += customerDeliveryData[productId].amount;
-            }
-            
-            const totalReceived = customerAmountReceived ? 
-              (customerAmountReceived.cash || 0) + (customerAmountReceived.upi || 0) : 0;
-            
-            recalculatedOutstanding += totalDelivered - totalReceived;
-          }
-        }
-        
-        // Update customer if outstanding amount is different
-        const currentOutstanding = customer.outstandingAmount || 0;
-        const difference = Math.abs(recalculatedOutstanding - currentOutstanding);
-        
-        if (difference > 0.01) {
-          console.log(`Repairing customer ${customer.name}: ${currentOutstanding} → ${recalculatedOutstanding}`);
-          // Note: In a real implementation, you'd call updateCustomer here
-          // await updateCustomer(customer.id, { outstandingAmount: recalculatedOutstanding });
-          repairCount.customers++;
-        }
-      }
-      
-      console.log(`Data repair completed: ${repairCount.customers} customers, ${repairCount.sheets} sheets updated`);
-      return repairCount;
-    } catch (error) {
-      console.error('Error during data consistency repair:', error);
-      throw error;
-    }
-  };
 
   const loadData = async () => {
     setLoading(true);
