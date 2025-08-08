@@ -5,15 +5,12 @@ import {
   AlertCircle,
   Wifi,
   Database,
-  Cloud,
   RefreshCw
 } from 'lucide-react';
-// import { isUserAuthenticated } from '../utils/google-sheets'; // DISABLED: Google integration disabled
 import { AutoBackupService } from '../utils/auto-backup';
 import { getStorageMode } from '../utils/supabase-storage';
 
 export const ConnectionStatus: React.FC = () => {
-  const [googleAuthStatus, setGoogleAuthStatus] = useState(false);
   const [supabaseStatus, setSupabaseStatus] = useState<'connected' | 'disconnected' | 'unknown'>('unknown');
   const [autoBackupStatus, setAutoBackupStatus] = useState<any>(null);
   const [lastChecked, setLastChecked] = useState<Date>(new Date());
@@ -22,19 +19,16 @@ export const ConnectionStatus: React.FC = () => {
   useEffect(() => {
     checkAllStatuses();
     
-    // Check status every 60 seconds (reduced frequency to prevent conflicts)
+    // Check status every 60 seconds
     const interval = setInterval(checkAllStatuses, 60000);
     return () => clearInterval(interval);
   }, []);
 
   const checkAllStatuses = async () => {
-    if (isChecking) return; // Prevent multiple simultaneous checks
+    if (isChecking) return;
     
     setIsChecking(true);
     try {
-      // Google authentication disabled
-      setGoogleAuthStatus(false);
-      
       // Check Supabase connection
       const storageMode = getStorageMode();
       setSupabaseStatus(storageMode === 'supabase' ? 'connected' : 'disconnected');
@@ -74,7 +68,6 @@ export const ConnectionStatus: React.FC = () => {
   const getOverallHealthStatus = () => {
     const statuses = [
       supabaseStatus === 'connected',
-      googleAuthStatus,
       autoBackupStatus?.isActive || false
     ];
     
@@ -125,7 +118,7 @@ export const ConnectionStatus: React.FC = () => {
         </div>
 
         {/* Individual Service Status */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Database Status */}
           <div className="p-4 border border-gray-200 rounded-lg">
             <div className="flex items-center gap-3 mb-2">
@@ -141,23 +134,6 @@ export const ConnectionStatus: React.FC = () => {
             </div>
             <p className="text-xs text-gray-500 mt-1">
               {supabaseStatus === 'connected' ? 'Supabase cloud database' : 'Using local storage fallback'}
-            </p>
-          </div>
-
-          {/* Google Sheets Status */}
-          <div className="p-4 border border-gray-200 rounded-lg">
-            <div className="flex items-center gap-3 mb-2">
-              <Cloud className="w-5 h-5 text-blue-600" />
-              <h4 className="font-medium text-gray-900">Google Sheets</h4>
-            </div>
-            <div className="flex items-center gap-2">
-              {getStatusIcon(googleAuthStatus)}
-              <span className={`text-sm font-medium ${getStatusColor(googleAuthStatus)}`}>
-                {googleAuthStatus ? 'Authenticated' : 'Not Authenticated'}
-              </span>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              {googleAuthStatus ? 'Ready for backup operations' : 'Authentication required for backups'}
             </p>
           </div>
 
@@ -185,19 +161,9 @@ export const ConnectionStatus: React.FC = () => {
         <div className="mt-6 pt-4 border-t border-gray-200">
           <h4 className="font-medium text-gray-900 mb-3">Quick Actions</h4>
           <div className="flex flex-wrap gap-2">
-            {!googleAuthStatus && (
-              <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
-                Google authentication required for backups
-              </span>
-            )}
             {supabaseStatus !== 'connected' && (
               <span className="px-3 py-1 bg-red-100 text-red-800 text-xs rounded-full">
                 Database connection issue - using local storage
-              </span>
-            )}
-            {!autoBackupStatus?.isActive && googleAuthStatus && (
-              <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                Auto backup available but not active
               </span>
             )}
             {overallHealth.status === 'healthy' && (

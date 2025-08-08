@@ -1,16 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Cloud, 
   Database, 
-  CheckCircle, 
-  XCircle,
+  CheckCircle,
   AlertTriangle
 } from 'lucide-react';
-// import { isUserAuthenticated, getBackupStatus } from '../utils/google-sheets'; // DISABLED: Google integration disabled
 import { getStorageMode } from '../utils/supabase-storage';
 
 export const StatusIndicator: React.FC = () => {
-  const [googleAuth, setGoogleAuth] = useState(false);
   const [database, setDatabase] = useState<'supabase' | 'localStorage'>('localStorage');
   const [showDetails, setShowDetails] = useState(false);
 
@@ -23,12 +19,8 @@ export const StatusIndicator: React.FC = () => {
   }, []);
 
   const checkStatus = () => {
-    setGoogleAuth(false); // Google authentication disabled
     setDatabase(getStorageMode() === 'supabase' ? 'supabase' : 'localStorage');
   };
-
-  // const googleConfig = getBackupStatus(); // DISABLED: Google integration disabled
-  // Google configuration disabled
 
   return (
     <div className="relative">
@@ -45,16 +37,6 @@ export const StatusIndicator: React.FC = () => {
               <CheckCircle className="w-3 h-3 text-green-600 -ml-1" />
             ) : (
               <AlertTriangle className="w-3 h-3 text-yellow-600 -ml-1" />
-            )}
-          </div>
-          
-          {/* Google Sheets Status */}
-          <div className="flex items-center">
-            <Cloud className="w-4 h-4 text-green-600" />
-            {googleAuth ? (
-              <CheckCircle className="w-3 h-3 text-green-600 -ml-1" />
-            ) : (
-              <XCircle className="w-3 h-3 text-red-600 -ml-1" />
             )}
           </div>
         </div>
@@ -85,43 +67,6 @@ export const StatusIndicator: React.FC = () => {
                       <span className="text-xs text-yellow-600">Local</span>
                     </>
                   )}
-                </div>
-              </div>
-
-              {/* Google Sheets Status */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Cloud className="w-4 h-4 text-green-600" />
-                  <span className="text-sm">Backup</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  {googleAuth ? (
-                    <>
-                      <CheckCircle className="w-4 h-4 text-green-600" />
-                      <span className="text-xs text-green-600">Connected</span>
-                    </>
-                  ) : (
-                    <>
-                      <XCircle className="w-4 h-4 text-red-600" />
-                      <span className="text-xs text-red-600">Disconnected</span>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Configuration Status */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-blue-100 flex items-center justify-center">
-                    <div className="w-2 h-2 rounded-full bg-blue-600"></div>
-                  </div>
-                  <span className="text-sm">API Config</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <>
-                    <XCircle className="w-4 h-4 text-gray-400" />
-                    <span className="text-xs text-gray-400">Disabled</span>
-                  </>
                 </div>
               </div>
             </div>

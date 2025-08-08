@@ -3,8 +3,6 @@ import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { autoBackupService } from './utils/auto-backup';
 import { DataProvider } from './contexts/DataContext';
-import { AuthProvider } from './contexts/AuthContext';
-import { ProtectedRoute } from './components/Auth/ProtectedRoute';
 
 // Lazy load components that are not immediately needed
 const RouteSheets = lazy(() => import('./components/RouteSheets').then(module => ({ default: module.RouteSheets })));
@@ -77,15 +75,11 @@ function App() {
   };
 
   return (
-    <AuthProvider>
-      <ProtectedRoute>
-        <DataProvider>
-          <Layout currentPage={currentPage} onPageChange={setCurrentPage}>
-            {renderPage()}
-          </Layout>
-        </DataProvider>
-      </ProtectedRoute>
-    </AuthProvider>
+    <DataProvider>
+      <Layout currentPage={currentPage} onPageChange={setCurrentPage}>
+        {renderPage()}
+      </Layout>
+    </DataProvider>
   );
 }
 
