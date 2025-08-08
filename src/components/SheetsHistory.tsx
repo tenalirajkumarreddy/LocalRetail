@@ -19,11 +19,10 @@ import {
   deleteSheetRecord,
   closeSheetRecord,
   getCustomers,
-  SheetRecord,
-  validateAndFixDuplicatePayments
+  SheetRecord
 } from '../utils/supabase-storage';
 import { generateRouteSheetPDF, printRouteSheet } from '../utils/pdf';
-import { Product, Customer } from '../types';
+import { Product } from '../types';
 
 export const SheetsHistory: React.FC = () => {
   const [sheetRecords, setSheetRecords] = useState<SheetRecord[]>([]);
@@ -180,114 +179,6 @@ export const SheetsHistory: React.FC = () => {
       throw error;
     }
   };
-
-  // Add comprehensive data integrity check
-  const performDataIntegrityCheck = async () => {
-    try {
-      console.log('Performing data integrity check...');
-      
-      // Check for duplicate payment IDs
-      const duplicateCheck = await validateAndFixDuplicatePayments();
-      if (duplicateCheck.duplicatesFound > 0) {
-        console.warn(`⚠️ Found ${duplicateCheck.duplicatesFound} duplicate payment IDs`);
-      }
-      
-      const allCustomers = await getCustomers();
-      
-      const issues: string[] = [];
-      
-      // Add duplicate payment IDs to issues if found
-      if (duplicateCheck.duplicatesFound > 0) {
-        issues.push(`Found ${duplicateCheck.duplicatesFound} duplicate payment IDs in the system`);
-      }
-      
-      // Check each sheet for data consistency
-      for (const sheet of sheetRecords) {
-        // Validate sheet data
-        const validationErrors = validateSheetData(sheet);
-        if (validationErrors.length > 0) {
-          issues.push(`Sheet ${sheet.routeName} (${new Date(sheet.createdAt).toLocaleDateString()}): ${validationErrors.join(', ')}`);
-        }
-        
-        // Check if customer references are valid
-        if (sheet.customers) {
-          for (const customer of sheet.customers) {
-            const customerExists = allCustomers.find((c: Customer) => c.id === customer.id);
-            if (!customerExists) {
-              issues.push(`Sheet ${sheet.routeName}: Customer ID ${customer.id} not found in customers table`);
-            }
-          }
-        }
-      }
-      
-      // Check customer outstanding amounts match closed sheets
-      for (const customer of allCustomers) {
-        const customerSheets = sheetRecords.filter((sheet: SheetRecord) => 
-          sheet.status === 'closed' && 
-          sheet.customers?.some((c: any) => c.id === customer.id)
-        );
-        
-        let calculatedOutstanding = 0;
-        for (const sheet of customerSheets) {
-          // Check if customer has delivery data
-          const customerDeliveryData = sheet.deliveryData[customer.id];
-          const customerAmountReceived = sheet.amountReceived[customer.id];
-          
-          if (customerDeliveryData) {
-            // Calculate total delivered amount for this customer
-            let totalDelivered = 0;
-            for (const productId in customerDeliveryData) {
-              totalDelivered += customerDeliveryData[productId].amount;
-            }
-            
-            // Get total amount received
-            const totalReceived = customerAmountReceived ? 
-              (customerAmountReceived.cash || 0) + (customerAmountReceived.upi || 0) : 0;
-            
-            calculatedOutstanding += totalDelivered - totalReceived;
-          }
-        }
-        
-        const actualOutstanding = customer.outstandingAmount || 0;
-        const difference = Math.abs(calculatedOutstanding - actualOutstanding);
-        
-        if (difference > 0.01) { // Allow for minor floating point differences
-          issues.push(`Customer ${customer.name}: Outstanding amount mismatch. Calculated: ₹${calculatedOutstanding.toFixed(2)}, Stored: ₹${actualOutstanding.toFixed(2)}`);
-        }
-      }
-      
-      if (issues.length > 0) {
-        console.warn('Data integrity issues found:', issues);
-        // In development, show these issues. In production, log them.
-        if (process.env.NODE_ENV === 'development') {
-          alert(`Data integrity issues found:\n${issues.slice(0, 5).join('\n')}${issues.length > 5 ? `\n... and ${issues.length - 5} more issues` : ''}`);
-        }
-      } else {
-        console.log('Data integrity check passed');
-      }
-      
-      return issues;
-    } catch (error) {
-      console.error('Error during data integrity check:', error);
-      return [`Data integrity check failed: ${error instanceof Error ? error.message : 'Unknown error'}`];
-    }
-  };
-
-  // Run data integrity check on component mount and periodically
-  useEffect(() => {
-    const runIntegrityCheck = async () => {
-      if (sheetRecords.length > 0) {
-        await performDataIntegrityCheck();
-      }
-    };
-    
-    runIntegrityCheck();
-    
-    // Run integrity check every 5 minutes
-    const interval = setInterval(runIntegrityCheck, 5 * 60 * 1000);
-    
-    return () => clearInterval(interval);
-  }, [sheetRecords]);
 
   const loadData = async () => {
     setLoading(true);
