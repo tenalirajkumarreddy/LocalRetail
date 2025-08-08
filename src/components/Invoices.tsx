@@ -310,7 +310,7 @@ export const Invoices: React.FC = () => {
               />
             </div>
             <div className="text-sm text-gray-600">
-              {filteredInvoices.length} of {invoices.length} invoices
+              {filteredInvoices.length} of {allInvoices.length} invoices
             </div>
           </div>
           
@@ -345,7 +345,7 @@ export const Invoices: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">All Customers</option>
-                {customers.map(customer => (
+                {allCustomers.map((customer: Customer) => (
                   <option key={customer.id} value={customer.id}>
                     {customer.name} ({customer.id})
                   </option>
