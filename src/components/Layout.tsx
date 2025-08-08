@@ -10,9 +10,11 @@ import {
   X,
   MapPin,
   History,
-  CreditCard
+  CreditCard,
+  LogOut,
+  User
 } from 'lucide-react';
-import { StatusIndicator } from './StatusIndicator';
+import { useAuth } from '../contexts/AuthContext';
 
 interface LayoutProps {
   children: ReactNode;
@@ -22,6 +24,7 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageChange }) => {
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const { user, signOut } = useAuth();
 
   const navigation = [
     { name: 'Dashboard', id: 'dashboard', icon: Home },
@@ -34,6 +37,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageCha
     { name: 'Products', id: 'products', icon: Package },
     { name: 'Settings', id: 'settings', icon: Settings },
   ];
+
+  const handleSignOut = async () => {
+    if (confirm('Are you sure you want to sign out?')) {
+      await signOut();
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -81,6 +90,30 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageCha
             );
           })}
         </nav>
+        
+        {/* User Info and Sign Out */}
+        <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-gray-200 bg-gray-50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                <User className="w-4 h-4 text-white" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm font-medium text-gray-900 truncate">
+                  {user?.email}
+                </p>
+                <p className="text-xs text-gray-500">Authenticated</p>
+              </div>
+            </div>
+            <button
+              onClick={handleSignOut}
+              className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Sign Out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Main content - Full width on all screens */}
@@ -96,7 +129,23 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageCha
           <h1 className="text-lg font-semibold text-gray-900">
             {navigation.find(nav => nav.id === currentPage)?.name || 'Sales Manager'}
           </h1>
-          <StatusIndicator />
+          
+          {/* User Profile Section */}
+          <div className="flex items-center space-x-2">
+            <div className="hidden sm:flex items-center">
+              <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center mr-2">
+                <User className="w-3 h-3 text-white" />
+              </div>
+              <span className="text-xs text-gray-700 max-w-24 truncate">{user?.email}</span>
+            </div>
+            <button
+              onClick={handleSignOut}
+              className="flex items-center p-1 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+              title="Sign Out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Page content */}
